@@ -1,0 +1,34 @@
+[package]
+name = "nebula-render"
+description = "Nebula IDE renderer: a backend-agnostic scene API with a wgpu GPU backend and a tiny-skia CPU fallback."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+nebula-syntax.workspace = true
+
+wgpu.workspace = true
+tiny-skia.workspace = true
+cosmic-text.workspace = true
+bytemuck.workspace = true
+raw-window-handle.workspace = true
+pollster.workspace = true
+etagere.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "raster"
+harness = false
