@@ -1,0 +1,27 @@
+[package]
+name = "nebula-wasm-host"
+description = "Nebula IDE extension host: Wasmtime Component Model sandbox with fuel, epoch interruption and memory limits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+wasmparser.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+semver.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wat = "1.246"
+pretty_assertions.workspace = true
