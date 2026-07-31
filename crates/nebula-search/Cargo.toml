@@ -1,0 +1,29 @@
+[package]
+name = "nebula-search"
+description = "Nebula IDE search: parallel project-wide content search and fuzzy file/symbol matching."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+nebula-vfs.workspace = true
+
+grep-regex.workspace = true
+grep-searcher.workspace = true
+grep-matcher.workspace = true
+regex.workspace = true
+nucleo-matcher.workspace = true
+ignore.workspace = true
+rayon.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+pretty_assertions.workspace = true

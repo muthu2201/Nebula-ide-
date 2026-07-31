@@ -1,0 +1,24 @@
+# Rust build output
+/target
+**/*.rs.bk
+
+# Nebula per-project state and caches
+.nebula/cache/
+*.nebula-tmp-*
+
+# Local secrets and licences — never committed
+.env
+.env.local
+*.lic
+*.pem
+!docs/**/*.pem
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Stress-test and benchmark output
+/stress-results/
+/target/criterion/

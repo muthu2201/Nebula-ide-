@@ -1,0 +1,38 @@
+[package]
+name = "nebula-syntax"
+description = "Nebula IDE syntax layer: incremental tree-sitter parsing, highlighting, symbol extraction and structural navigation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+
+tree-sitter.workspace = true
+streaming-iterator = "0.1"
+parking_lot.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# Grammars. Each is a separate crate so a grammar can be updated without
+# touching the others, and so the set is visible in the dependency audit.
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-json = "0.24"
+tree-sitter-toml-ng = "0.7"
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "parse"
+harness = false

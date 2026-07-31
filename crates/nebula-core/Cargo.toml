@@ -1,0 +1,28 @@
+[package]
+name = "nebula-core"
+description = "Nebula IDE core text model: rope buffer, multi-cursor selections, transactional edits and undo history."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+ropey.workspace = true
+smallvec.workspace = true
+memchr.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+pretty_assertions.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "text_ops"
+harness = false

@@ -1,0 +1,28 @@
+[package]
+name = "nebula-vfs"
+description = "Nebula IDE virtual filesystem: project trees, gitignore-aware traversal, atomic writes and debounced change watching."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+
+ignore.workspace = true
+notify.workspace = true
+notify-debouncer-full.workspace = true
+walkdir.workspace = true
+memmap2.workspace = true
+dirs.workspace = true
+parking_lot.workspace = true
+crossbeam-channel.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+pretty_assertions.workspace = true
