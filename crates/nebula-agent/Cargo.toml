@@ -1,0 +1,33 @@
+[package]
+name = "nebula-agent"
+description = "Nebula IDE agent loop: task-scoped capability grants, tamper-evident audit logging and prompt-injection defences."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-ai.workspace = true
+nebula-core.workspace = true
+nebula-exec.workspace = true
+nebula-mcp.workspace = true
+nebula-sandbox.workspace = true
+nebula-vfs.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+blake3.workspace = true
+time.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+futures.workspace = true
+tempfile.workspace = true
+pretty_assertions.workspace = true

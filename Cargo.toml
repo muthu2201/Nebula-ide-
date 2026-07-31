@@ -144,11 +144,9 @@ libc = "0.2"
 windows-sys = "0.61"
 
 # --- secrets ---
-keyring = { version = "4.1", features = [
-    "apple-native",
-    "windows-native",
-    "sync-secret-service",
-] }
+# The keychain backend is chosen per target in `nebula-ai`, so that a Linux
+# build does not compile the macOS and Windows stores (and vice versa).
+keyring = { version = "4.1", default-features = false, features = ["v1"] }
 
 # --- cli / misc ---
 clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }

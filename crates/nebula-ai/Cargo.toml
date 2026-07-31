@@ -1,0 +1,43 @@
+[package]
+name = "nebula-ai"
+description = "Nebula IDE model access: provider port, Anthropic Messages API adapter, BYOK key storage and prompt-cache management."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+zeroize.workspace = true
+parking_lot.workspace = true
+url.workspace = true
+
+# Each platform's native secret store, and only that one.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { workspace = true, features = ["apple-native-keyring-store"] }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { workspace = true, features = ["windows-native-keyring-store"] }
+
+# zbus rather than the dbus C bindings: a pure-Rust Secret Service client keeps
+# the build free of a vendored OpenSSL and a libdbus system dependency.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { workspace = true, features = ["zbus-secret-service-keyring-store"] }
+
+[dev-dependencies]
+axum.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+serde_json.workspace = true
+tokio-util.workspace = true
+tempfile.workspace = true
+pretty_assertions.workspace = true
