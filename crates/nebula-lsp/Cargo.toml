@@ -1,0 +1,24 @@
+[package]
+name = "nebula-lsp"
+description = "Nebula IDE Language Server Protocol client: framed JSON-RPC over stdio with document synchronisation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+pretty_assertions.workspace = true

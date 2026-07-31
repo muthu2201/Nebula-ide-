@@ -103,7 +103,8 @@ etagere = "0.2"
 reqwest = { version = "0.13", default-features = false, features = [
     "json",
     "stream",
-    "rustls-tls-native-roots",
+    "rustls",
+    "rustls-native-certs",
     "charset",
     "http2",
 ] }
