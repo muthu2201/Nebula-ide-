@@ -1,0 +1,25 @@
+[package]
+name = "nebula-index"
+description = "Nebula IDE repo map: symbol graph construction and personalised PageRank ranking for AI context selection."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+nebula-vfs.workspace = true
+nebula-syntax.workspace = true
+
+rayon.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+bincode.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+pretty_assertions.workspace = true
