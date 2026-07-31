@@ -1,0 +1,853 @@
+//! Sandboxed process execution.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+use nebula_sandbox::{Enforcement, Policy};
+use serde::{Deserialize, Serialize};
+use tokio::io::AsyncReadExt;
+
+use crate::limits::ResourceLimits;
+use crate::{ExecError, Result};
+
+/// How a process finished.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Status {
+    /// Exited normally with this code.
+    Exited(i32),
+    /// Killed by this signal (Unix only).
+    Signaled(i32),
+    /// Killed because it exceeded its wall-clock timeout.
+    TimedOut,
+}
+
+impl Status {
+    /// Whether the process succeeded.
+    pub fn is_success(&self) -> bool {
+        matches!(self, Status::Exited(0))
+    }
+}
+
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Status::Exited(0) => write!(f, "exited successfully"),
+            Status::Exited(code) => write!(f, "exited with code {code}"),
+            Status::Signaled(signal) => write!(f, "killed by signal {signal}"),
+            Status::TimedOut => write!(f, "timed out"),
+        }
+    }
+}
+
+/// What a process produced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Output {
+    /// How it finished.
+    pub status: Status,
+    /// Captured standard output, possibly truncated.
+    pub stdout: String,
+    /// Captured standard error, possibly truncated.
+    pub stderr: String,
+    /// Whether either stream hit the capture ceiling.
+    pub truncated: bool,
+    /// Wall-clock duration.
+    pub duration: Duration,
+    /// What confinement was in force, for the audit log.
+    pub enforcement: Option<String>,
+}
+
+impl Output {
+    /// Whether the process succeeded.
+    pub fn is_success(&self) -> bool {
+        self.status.is_success()
+    }
+
+    /// stdout and stderr combined, as a tool would show them.
+    pub fn combined(&self) -> String {
+        if self.stderr.is_empty() {
+            self.stdout.clone()
+        } else if self.stdout.is_empty() {
+            self.stderr.clone()
+        } else {
+            format!("{}\n{}", self.stdout, self.stderr)
+        }
+    }
+}
+
+/// A process to run.
+#[derive(Debug, Clone)]
+pub struct Command {
+    program: String,
+    args: Vec<String>,
+    cwd: Option<PathBuf>,
+    env: BTreeMap<String, String>,
+    inherit_env: bool,
+    policy: Option<Policy>,
+    limits: ResourceLimits,
+    require_confinement: bool,
+    stdin: Option<Vec<u8>>,
+}
+
+impl Command {
+    /// A command that runs `program`.
+    pub fn new(program: impl Into<String>) -> Self {
+        Self {
+            program: program.into(),
+            args: Vec::new(),
+            cwd: None,
+            env: BTreeMap::new(),
+            // Deny-by-default for the environment too: a tool that inherits the
+            // editor's environment inherits every token in it.
+            inherit_env: false,
+            policy: None,
+            limits: ResourceLimits::default(),
+            require_confinement: false,
+            stdin: None,
+        }
+    }
+
+    /// Add an argument.
+    pub fn arg(mut self, arg: impl Into<String>) -> Self {
+        self.args.push(arg.into());
+        self
+    }
+
+    /// Add several arguments.
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    /// Set the working directory.
+    pub fn current_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.cwd = Some(dir.into());
+        self
+    }
+
+    /// Set an environment variable.
+    pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.insert(key.into(), value.into());
+        self
+    }
+
+    /// Inherit the parent's environment.
+    ///
+    /// Off by default. Turning it on hands the child every secret in the
+    /// editor's environment, so it is opt-in and should stay rare.
+    pub fn inherit_env(mut self, inherit: bool) -> Self {
+        self.inherit_env = inherit;
+        self
+    }
+
+    /// Confine the child with `policy`.
+    pub fn sandbox(mut self, policy: Policy) -> Self {
+        self.policy = Some(policy);
+        self
+    }
+
+    /// Refuse to launch if the sandbox policy cannot be fully enforced.
+    ///
+    /// The right setting for running model-generated code. It is off by default
+    /// because a developer on an older kernel still needs their build command to
+    /// run, and the enforcement level is reported either way.
+    pub fn require_confinement(mut self, require: bool) -> Self {
+        self.require_confinement = require;
+        self
+    }
+
+    /// Set resource limits.
+    pub fn limits(mut self, limits: ResourceLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Set the wall-clock timeout.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.limits.timeout = timeout;
+        self
+    }
+
+    /// Write `data` to the child's standard input, then close it.
+    pub fn stdin(mut self, data: impl Into<Vec<u8>>) -> Self {
+        self.stdin = Some(data.into());
+        self
+    }
+
+    /// The program this command runs.
+    pub fn program(&self) -> &str {
+        &self.program
+    }
+
+    /// A shell-like rendering, for logs and for the permission prompt.
+    ///
+    /// This is display only. Nebula never builds a command line by string
+    /// concatenation and hands it to a shell — arguments are passed as an
+    /// array, so there is nothing for a quoting bug to escape into.
+    pub fn display(&self) -> String {
+        let mut out = self.program.clone();
+        for arg in &self.args {
+            out.push(' ');
+            if arg.contains(|c: char| c.is_whitespace() || c == '"' || c == '\'') {
+                out.push_str(&format!("{arg:?}"));
+            } else {
+                out.push_str(arg);
+            }
+        }
+        out
+    }
+
+    /// Run to completion.
+    pub async fn run(self) -> Result<Output> {
+        let started = Instant::now();
+
+        // Resolve the program up front so a typo produces a clear error rather
+        // than an opaque ENOENT from the spawn.
+        let resolved = which::which(&self.program)
+            .map_err(|_| ExecError::NotFound(self.program.clone()))?;
+
+        if let Some(cwd) = &self.cwd
+            && !cwd.is_dir()
+        {
+            return Err(ExecError::BadWorkingDirectory(cwd.clone()));
+        }
+
+        // Decide about confinement before spawning anything.
+        let enforcement_note = match &self.policy {
+            None => None,
+            Some(policy) => {
+                policy.validate()?;
+                let available = nebula_sandbox::is_available();
+                if self.require_confinement && !available {
+                    return Err(ExecError::SandboxRefused(format!(
+                        "no sandbox backend on this system ({})",
+                        nebula_sandbox::backend_description()
+                    )));
+                }
+                Some(nebula_sandbox::backend_description())
+            }
+        };
+
+        let mut command = tokio::process::Command::new(&resolved);
+        command
+            .args(&self.args)
+            .stdin(if self.stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            // Do not let a killed child leave a zombie behind.
+            .kill_on_drop(true);
+
+        if !self.inherit_env {
+            command.env_clear();
+            // A completely empty environment breaks almost every real tool;
+            // these are the variables a process legitimately needs to function.
+            command.env("PATH", default_path());
+            if let Some(home) = std::env::var_os("HOME") {
+                command.env("HOME", home);
+            }
+            command.env("LANG", "C.UTF-8");
+        }
+        for (key, value) in &self.env {
+            command.env(key, value);
+        }
+        if let Some(cwd) = &self.cwd {
+            command.current_dir(cwd);
+        }
+
+        #[cfg(unix)]
+        {
+            let limits = self.limits.clone();
+            let policy = self.policy.clone();
+            // SAFETY: this closure runs in the forked child between `fork` and
+            // `exec`. It performs syscalls only (`setsid`, `setrlimit`,
+            // `landlock_*`/`seccomp`), which is the standard way to confine a
+            // child before it runs the target binary. Nothing here touches
+            // shared state of the parent process.
+            unsafe {
+                command.pre_exec(move || {
+                    // A new session and process group, so a timeout can kill the
+                    // whole tree rather than just the direct child.
+                    if libc::setsid() == -1 {
+                        // Already a group leader is fine; anything else is not
+                        // fatal either, it just weakens cleanup.
+                        tracing::trace!("setsid failed in child");
+                    }
+                    limits.apply_to_current_process()?;
+
+                    if let Some(policy) = &policy {
+                        match nebula_sandbox::apply(policy) {
+                            Ok(_) => {}
+                            Err(err) => {
+                                // The child cannot log usefully; failing the
+                                // exec is the only safe response, because the
+                                // alternative is running unconfined code that
+                                // the caller believed was confined.
+                                let _ = err;
+                                return Err(std::io::Error::other(
+                                    "sandbox policy could not be applied",
+                                ));
+                            }
+                        }
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        let mut child = command.spawn().map_err(|source| ExecError::Spawn {
+            program: self.program.clone(),
+            source,
+        })?;
+
+        if let Some(data) = &self.stdin
+            && let Some(mut pipe) = child.stdin.take()
+        {
+            use tokio::io::AsyncWriteExt;
+            // A child that exits without reading stdin gives us EPIPE; that is
+            // the child's prerogative, not an error in the launch.
+            let _ = pipe.write_all(data).await;
+            let _ = pipe.shutdown().await;
+        }
+
+        let cap = self.limits.max_output_bytes;
+        let pid = child.id();
+
+        // The readers run as independent tasks for the whole life of the child.
+        // Draining continuously is mandatory, not an optimisation: a child that
+        // fills the 64 KiB pipe buffer blocks forever if nobody is reading, and
+        // would then hit the timeout instead of finishing.
+        let stdout_pipe = child.stdout.take();
+        let stderr_pipe = child.stderr.take();
+        let stdout_task = tokio::spawn(async move {
+            match stdout_pipe {
+                Some(mut pipe) => read_capped(&mut pipe, cap).await,
+                None => Ok((Vec::new(), false)),
+            }
+        });
+        let stderr_task = tokio::spawn(async move {
+            match stderr_pipe {
+                Some(mut pipe) => read_capped(&mut pipe, cap).await,
+                None => Ok((Vec::new(), false)),
+            }
+        });
+
+        let (timed_out, exit_status) =
+            match tokio::time::timeout(self.limits.timeout, child.wait()).await {
+                Ok(status) => (false, status),
+                Err(_) => {
+                    // Kill the group first so grandchildren die too, then reap.
+                    kill_process_group(pid);
+                    let _ = child.start_kill();
+                    (true, child.wait().await)
+                }
+            };
+
+        // Both pipes close when the process dies, so the readers finish
+        // promptly. The bound is a backstop against a grandchild that inherited
+        // the pipe and outlived the kill.
+        let collect = |joined: std::result::Result<
+            std::io::Result<(Vec<u8>, bool)>,
+            tokio::task::JoinError,
+        >| match joined {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(source)) => Err(ExecError::Io { program: self.program.clone(), source }),
+            // A panicked reader task should not lose the exit status.
+            Err(_) => Ok((Vec::new(), true)),
+        };
+
+        let drain = Duration::from_secs(2);
+        let stdout_joined = tokio::time::timeout(drain, stdout_task).await;
+        let stderr_joined = tokio::time::timeout(drain, stderr_task).await;
+
+        let (stdout_bytes, stdout_truncated) = match stdout_joined {
+            Ok(joined) => collect(joined)?,
+            Err(_) => (Vec::new(), true),
+        };
+        let (stderr_bytes, stderr_truncated) = match stderr_joined {
+            Ok(joined) => collect(joined)?,
+            Err(_) => (Vec::new(), true),
+        };
+
+        let status = if timed_out {
+            Status::TimedOut
+        } else {
+            match exit_status {
+                Ok(status) => classify(status),
+                Err(source) => {
+                    return Err(ExecError::Io { program: self.program.clone(), source });
+                }
+            }
+        };
+
+        Ok(Output {
+            status,
+            stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
+            truncated: stdout_truncated || stderr_truncated,
+            duration: started.elapsed(),
+            enforcement: enforcement_note,
+        })
+    }
+
+    /// Run to completion on a temporary runtime.
+    ///
+    /// For synchronous callers such as the stress harness and the SDK CLI.
+    pub fn run_blocking(self) -> Result<Output> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|source| ExecError::Io { program: self.program.clone(), source })?;
+        runtime.block_on(self.run())
+    }
+}
+
+/// Read from `pipe` until EOF or `cap` bytes, reporting whether it was capped.
+async fn read_capped<R>(pipe: &mut R, cap: usize) -> std::io::Result<(Vec<u8>, bool)>
+where
+    R: AsyncReadExt + Unpin,
+{
+    let mut out = Vec::new();
+    let mut buffer = [0u8; 16 * 1024];
+    let mut truncated = false;
+
+    loop {
+        let read = pipe.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        if out.len() >= cap {
+            // Keep draining so the child does not block on a full pipe, but stop
+            // accumulating.
+            truncated = true;
+            continue;
+        }
+        let take = read.min(cap - out.len());
+        out.extend_from_slice(&buffer[..take]);
+        if take < read {
+            truncated = true;
+        }
+    }
+    Ok((out, truncated))
+}
+
+fn classify(status: std::process::ExitStatus) -> Status {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return Status::Signaled(signal);
+        }
+    }
+    Status::Exited(status.code().unwrap_or(-1))
+}
+
+/// Kill an entire process group.
+///
+/// The child called `setsid`, so its PID is its process-group ID and a negative
+/// PID reaches every descendant. Killing only the direct child would leave the
+/// compiler processes a build spawned still running.
+fn kill_process_group(pid: Option<u32>) {
+    #[cfg(unix)]
+    {
+        if let Some(pid) = pid {
+            // SAFETY: `kill` with a negative PID targets the process group; an
+            // invalid or already-dead group simply returns ESRCH.
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+    }
+}
+
+/// A sane `PATH` for a child that does not inherit the environment.
+fn default_path() -> String {
+    #[cfg(unix)]
+    {
+        // Include the parent's PATH so toolchains installed under the user's
+        // home (rustup, nvm, pyenv) remain reachable — but a policy that denies
+        // reading those directories still stops the child using them.
+        match std::env::var("PATH") {
+            Ok(path) if !path.is_empty() => path,
+            _ => "/usr/local/bin:/usr/bin:/bin".to_string(),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\System32".to_string())
+    }
+}
+
+/// Which confinement a policy achieved, without running anything.
+pub fn probe_enforcement(policy: &Policy) -> Result<Enforcement> {
+    policy.validate()?;
+    Ok(if nebula_sandbox::is_available() {
+        Enforcement::Full { mechanism: nebula_sandbox::backend_description() }
+    } else {
+        Enforcement::Unsupported { reason: nebula_sandbox::backend_description() }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn runs_a_program_and_captures_stdout() {
+        let output = Command::new("echo").arg("hello nebula").run().await.unwrap();
+        assert!(output.is_success(), "{output:?}");
+        assert_eq!(output.stdout.trim(), "hello nebula");
+        assert!(output.stderr.is_empty());
+        assert!(!output.truncated);
+    }
+
+    #[tokio::test]
+    async fn captures_a_nonzero_exit_code() {
+        let output = Command::new("sh").arg("-c").arg("exit 42").run().await.unwrap();
+        assert_eq!(output.status, Status::Exited(42));
+        assert!(!output.is_success());
+    }
+
+    #[tokio::test]
+    async fn captures_stderr_separately() {
+        let output =
+            Command::new("sh").arg("-c").arg("echo out; echo err >&2").run().await.unwrap();
+        assert_eq!(output.stdout.trim(), "out");
+        assert_eq!(output.stderr.trim(), "err");
+        assert!(output.combined().contains("out") && output.combined().contains("err"));
+    }
+
+    #[tokio::test]
+    async fn a_missing_program_is_reported_clearly() {
+        let err = Command::new("nebula-definitely-not-a-real-program").run().await.unwrap_err();
+        assert!(matches!(err, ExecError::NotFound(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn stdin_is_delivered() {
+        let output = Command::new("cat").stdin("piped input").run().await.unwrap();
+        assert_eq!(output.stdout, "piped input");
+    }
+
+    #[tokio::test]
+    async fn the_working_directory_is_honoured() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("marker.txt"), b"found").unwrap();
+
+        let output = Command::new("cat")
+            .arg("marker.txt")
+            .current_dir(dir.path())
+            .run()
+            .await
+            .unwrap();
+        assert_eq!(output.stdout, "found");
+    }
+
+    #[tokio::test]
+    async fn a_bad_working_directory_is_rejected() {
+        let err = Command::new("echo")
+            .current_dir("/definitely/not/a/directory")
+            .run()
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ExecError::BadWorkingDirectory(_)));
+    }
+
+    #[tokio::test]
+    async fn the_environment_is_not_inherited_by_default() {
+        // SAFETY: single-threaded test setup before any child is spawned.
+        unsafe { std::env::set_var("NEBULA_SECRET_TOKEN", "super-secret") };
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg("echo \"[${NEBULA_SECRET_TOKEN:-unset}]\"")
+            .run()
+            .await
+            .unwrap();
+        assert_eq!(
+            output.stdout.trim(),
+            "[unset]",
+            "the child must not inherit the editor's secrets"
+        );
+
+        let inherited = Command::new("sh")
+            .arg("-c")
+            .arg("echo \"[${NEBULA_SECRET_TOKEN:-unset}]\"")
+            .inherit_env(true)
+            .run()
+            .await
+            .unwrap();
+        assert_eq!(inherited.stdout.trim(), "[super-secret]");
+
+        unsafe { std::env::remove_var("NEBULA_SECRET_TOKEN") };
+    }
+
+    #[tokio::test]
+    async fn explicit_environment_variables_reach_the_child() {
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg("echo $MY_VAR")
+            .env("MY_VAR", "explicit value")
+            .run()
+            .await
+            .unwrap();
+        assert_eq!(output.stdout.trim(), "explicit value");
+    }
+
+    #[tokio::test]
+    async fn a_hanging_process_is_killed_at_the_timeout() {
+        let started = Instant::now();
+        let output = Command::new("sleep")
+            .arg("60")
+            .timeout(Duration::from_millis(300))
+            .run()
+            .await
+            .unwrap();
+
+        assert_eq!(output.status, Status::TimedOut);
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the timeout did not actually stop the process"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_whole_process_group_dies_on_timeout() {
+        // The shell spawns a grandchild and then waits. Killing only the direct
+        // child would leave `sleep` running.
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("grandchild-still-running");
+        let script = format!(
+            "sh -c 'sleep 30; touch {}' & wait",
+            marker.display()
+        );
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .timeout(Duration::from_millis(300))
+            .run()
+            .await
+            .unwrap();
+        assert_eq!(output.status, Status::TimedOut);
+
+        // If the grandchild survived, it would create the marker after 30s.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!marker.exists(), "a grandchild outlived the timeout");
+    }
+
+    #[tokio::test]
+    async fn oversized_output_is_truncated_rather_than_exhausting_memory() {
+        let limits = ResourceLimits::default().max_output(4096).timeout(Duration::from_secs(30));
+        let output = Command::new("sh")
+            .arg("-c")
+            // 5 MB of output against a 4 KB ceiling.
+            .arg("yes nebula | head -c 5000000")
+            .limits(limits)
+            .run()
+            .await
+            .unwrap();
+
+        assert!(output.truncated, "the truncation flag must be set");
+        assert!(
+            output.stdout.len() <= 4096,
+            "captured {} bytes despite a 4096 byte cap",
+            output.stdout.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_program_producing_no_output_is_fine() {
+        let output = Command::new("true").run().await.unwrap();
+        assert!(output.is_success());
+        assert!(output.stdout.is_empty());
+    }
+
+    #[tokio::test]
+    async fn duration_is_measured() {
+        let output = Command::new("sleep").arg("0.2").run().await.unwrap();
+        assert!(output.duration >= Duration::from_millis(150), "{:?}", output.duration);
+    }
+
+    #[test]
+    fn the_display_form_quotes_arguments_with_spaces() {
+        let command = Command::new("grep").arg("-r").arg("two words").arg("src/");
+        let display = command.display();
+        assert!(display.starts_with("grep -r "));
+        assert!(display.contains("\"two words\""), "{display}");
+    }
+
+    #[test]
+    fn blocking_execution_works_without_an_ambient_runtime() {
+        let output = Command::new("echo").arg("sync").run_blocking().unwrap();
+        assert_eq!(output.stdout.trim(), "sync");
+    }
+
+    // --- Sandbox enforcement, end to end ---
+
+    /// Whether to skip a test that needs real OS confinement.
+    ///
+    /// Some kernels (containers, minimal VMs) have no Landlock, and a developer
+    /// on such a machine should still get a green test run. But a test that can
+    /// skip everywhere is a test that proves nothing, so CI sets
+    /// `NEBULA_REQUIRE_SANDBOX=1` and the skip becomes a hard failure there.
+    fn skip_without_sandbox() -> bool {
+        if nebula_sandbox::is_available() {
+            return false;
+        }
+        let backend = nebula_sandbox::backend_description();
+        assert!(
+            std::env::var("NEBULA_REQUIRE_SANDBOX").is_err(),
+            "NEBULA_REQUIRE_SANDBOX is set but no sandbox backend is available: {backend}"
+        );
+        eprintln!("skipping: no sandbox backend ({backend})");
+        true
+    }
+
+    /// A policy allowing the system directories a process needs to start, plus
+    /// `allowed`, but deliberately not `forbidden`.
+    fn confining_policy(allowed: &Path) -> Policy {
+        Policy::builder()
+            .label("test-confinement")
+            .read("/usr")
+            .read("/lib")
+            .read("/lib64")
+            .read("/bin")
+            .read("/etc")
+            .exec("/usr/bin")
+            .exec("/bin")
+            .read(allowed.to_path_buf())
+            .build()
+    }
+
+    #[tokio::test]
+    async fn a_confined_process_can_read_inside_its_policy() {
+        if skip_without_sandbox() {
+            return;
+        }
+        let allowed = TempDir::new().unwrap();
+        fs::write(allowed.path().join("ok.txt"), b"readable").unwrap();
+
+        let output = Command::new("cat")
+            .arg(allowed.path().join("ok.txt").display().to_string())
+            .sandbox(confining_policy(allowed.path()))
+            .timeout(Duration::from_secs(20))
+            .run()
+            .await
+            .unwrap();
+
+        assert!(output.is_success(), "granted read failed: {output:?}");
+        assert_eq!(output.stdout, "readable");
+    }
+
+    #[tokio::test]
+    async fn a_confined_process_cannot_read_outside_its_policy() {
+        if skip_without_sandbox() {
+            return;
+        }
+        let allowed = TempDir::new().unwrap();
+        let forbidden = TempDir::new().unwrap();
+        let secret = forbidden.path().join("secret.txt");
+        fs::write(&secret, b"should never be read").unwrap();
+
+        let output = Command::new("cat")
+            .arg(secret.display().to_string())
+            .sandbox(confining_policy(allowed.path()))
+            .timeout(Duration::from_secs(20))
+            .run()
+            .await
+            .unwrap();
+
+        assert!(
+            !output.is_success(),
+            "the sandbox let a process read outside its policy: {output:?}"
+        );
+        assert!(
+            !output.stdout.contains("should never be read"),
+            "secret content leaked: {output:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_confined_process_cannot_write_outside_its_policy() {
+        if skip_without_sandbox() {
+            return;
+        }
+        let allowed = TempDir::new().unwrap();
+        let forbidden = TempDir::new().unwrap();
+        let target = forbidden.path().join("written.txt");
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(format!("echo data > {}", target.display()))
+            .sandbox(confining_policy(allowed.path()))
+            .timeout(Duration::from_secs(20))
+            .run()
+            .await
+            .unwrap();
+
+        assert!(!output.is_success(), "a write outside the policy succeeded: {output:?}");
+        assert!(!target.exists(), "the file was created despite the policy");
+    }
+
+    #[tokio::test]
+    async fn a_confined_process_can_write_where_the_policy_allows() {
+        if skip_without_sandbox() {
+            return;
+        }
+        let workspace = TempDir::new().unwrap();
+        let target = workspace.path().join("output.txt");
+
+        let policy = Policy::builder()
+            .label("writable-workspace")
+            .read("/usr")
+            .read("/lib")
+            .read("/lib64")
+            .read("/bin")
+            .read("/etc")
+            .exec("/usr/bin")
+            .exec("/bin")
+            .write(workspace.path().to_path_buf())
+            .build();
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(format!("echo data > {}", target.display()))
+            .sandbox(policy)
+            .timeout(Duration::from_secs(20))
+            .run()
+            .await
+            .unwrap();
+
+        assert!(output.is_success(), "a permitted write failed: {output:?}");
+        assert_eq!(fs::read_to_string(&target).unwrap().trim(), "data");
+    }
+
+    #[tokio::test]
+    async fn the_enforcement_level_is_reported_for_the_audit_log() {
+        let dir = TempDir::new().unwrap();
+        let output = Command::new("true")
+            .sandbox(Policy::read_only(dir.path()))
+            .run()
+            .await
+            .unwrap();
+        assert!(output.enforcement.is_some(), "every sandboxed run must record what it achieved");
+    }
+
+    #[test]
+    fn probing_enforcement_does_not_require_running_anything() {
+        let dir = TempDir::new().unwrap();
+        let enforcement = probe_enforcement(&Policy::read_only(dir.path())).unwrap();
+        assert_eq!(enforcement.is_confined(), nebula_sandbox::is_available());
+    }
+}

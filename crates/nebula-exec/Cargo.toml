@@ -1,0 +1,27 @@
+[package]
+name = "nebula-exec"
+description = "Nebula IDE process execution: sandboxed program launching with resource limits, timeouts and streamed output capture."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-sandbox.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+which.workspace = true
+sysinfo.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+nix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true

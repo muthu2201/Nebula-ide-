@@ -1,0 +1,36 @@
+[package]
+name = "nebula-sandbox"
+description = "Nebula IDE OS-level sandboxing: Landlock and seccomp on Linux, Seatbelt on macOS, Job Objects on Windows."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock.workspace = true
+seccompiler.workspace = true
+nix.workspace = true
+libc.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc.workspace = true
+nix.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_Security",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true
