@@ -1,0 +1,35 @@
+[package]
+name = "nebula-sdk"
+description = "Nebula IDE extension SDK: scaffold, build, test and publish WebAssembly component extensions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "nebula-sdk"
+path = "src/main.rs"
+
+[dependencies]
+nebula-pkg.workspace = true
+nebula-wasm-host.workspace = true
+nebula-exec.workspace = true
+
+clap.workspace = true
+console.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+semver.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+reqwest.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wat = "1.246"
