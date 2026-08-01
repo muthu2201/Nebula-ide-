@@ -173,7 +173,7 @@ impl RepoMap {
             if used + cost > options.token_budget {
                 // Try a header-only entry, which is far cheaper — knowing a file
                 // exists is worth something even without its symbols.
-                let minimal = format!("{}\n", file.path.display());
+                let minimal = format!("{}\n", portable(&file.path));
                 let minimal_cost = tokens::estimate(&minimal);
                 if used + minimal_cost <= options.token_budget {
                     out.push_str(&minimal);
@@ -194,6 +194,20 @@ impl RepoMap {
     }
 }
 
+/// A path as the repo map should print it: separated by `/` on every platform.
+///
+/// The map is a document, not a filesystem operation. It goes into a prompt, a
+/// cache key and a diff, and a rendering that says `src\service.rs` on Windows
+/// and `src/service.rs` everywhere else makes all three differ by operating
+/// system for no reason anyone reading it would want. Forward slashes are also
+/// what every other tool that prints repository paths uses.
+///
+/// The `PathBuf` itself keeps native separators — it is a real path and gets
+/// used as one. Only the printing is normalised.
+pub(crate) fn portable(path: &std::path::Path) -> String {
+    path.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
+}
+
 /// Render one file's block.
 ///
 /// The `⋮` elision marker is the convention aider established and models handle
@@ -201,7 +215,7 @@ impl RepoMap {
 /// that.
 fn render_file(file: &RankedFile) -> String {
     let mut out = String::with_capacity(64 + file.symbols.len() * 48);
-    out.push_str(&file.path.display().to_string());
+    out.push_str(&portable(&file.path));
     out.push_str(":\n");
 
     let mut last_line: Option<usize> = None;
