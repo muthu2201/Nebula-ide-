@@ -107,10 +107,12 @@ pub fn build_profile(policy: &Policy) -> Result<String> {
 
     for path in &policy.exec_paths {
         let resolved = crate::resolve(path)?;
-        profile.push_str(&format!(
-            "(allow process-exec (subpath {}))\n",
-            quote_scheme(&resolved.to_string_lossy())
-        ));
+        let quoted = quote_scheme(&resolved.to_string_lossy());
+        profile.push_str(&format!("(allow process-exec (subpath {quoted}))\n"));
+        // Starting a binary means reading it, and on macOS the dynamic loader
+        // reads it again along with anything it links against. `process-exec`
+        // alone leaves every launch failing at the loader.
+        profile.push_str(&format!("(allow file-read* (subpath {quoted}))\n"));
     }
 
     match policy.network {

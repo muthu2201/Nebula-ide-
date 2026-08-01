@@ -42,6 +42,18 @@ pub struct Policy {
     pub label: String,
 }
 
+/// The directories on `PATH`, in order, skipping empty and relative entries.
+///
+/// Relative entries are dropped because a sandbox rule has to name a fixed
+/// place: a relative `PATH` entry means "wherever the process happens to be",
+/// which is not something a policy can grant.
+fn path_directories() -> Vec<PathBuf> {
+    let Some(path) = std::env::var_os("PATH") else {
+        return Vec::new();
+    };
+    std::env::split_paths(&path).filter(|p| p.is_absolute()).collect()
+}
+
 /// Character devices every sandbox permits, whatever the policy says.
 ///
 /// Denying `/dev/null` does not make a sandbox stronger — reads give EOF and
@@ -84,10 +96,23 @@ impl Policy {
             .read("/bin")
             .read("/etc")
             .read("/opt")
-            .exec("/usr/bin")
-            .exec("/usr/local/bin")
-            .exec("/bin")
             .network(NetworkAccess::Denied);
+
+        // Execution is granted for every directory on `PATH`, rather than a
+        // fixed list of standard ones. A hardcoded list is a guess about where
+        // toolchains live, and it is only ever right about the platform it was
+        // written on: on macOS `rustc` is in `~/.cargo/bin` and `python3` and
+        // `go` come from a version manager's directory, none of which appear in
+        // any list of "standard" binary directories.
+        //
+        // This is deliberate rather than a weakening. What contains a build
+        // tool is that it cannot write outside the project and its caches, and
+        // cannot reach the network. Which binaries it may *start* is not the
+        // control doing the work — a build compiles and runs new code by
+        // definition, so exec breadth was never the boundary.
+        for dir in path_directories() {
+            builder = builder.exec(dir);
+        }
 
         if let Some(home) = dirs_home() {
             // Toolchain caches. Granting the whole home directory would defeat
@@ -243,6 +268,33 @@ fn dirs_home() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn a_project_tool_may_execute_the_programs_on_its_path() {
+        // The bug this pins: exec was granted for a hardcoded `/usr/bin`,
+        // `/usr/local/bin`, `/bin`. That list is right on Linux and wrong on
+        // macOS, where the stress run failed to spawn rustc, python3, node and
+        // go — every one of them lives outside it.
+        let policy = Policy::project_tool("/tmp/project");
+
+        for tool in ["rustc", "cargo", "python3", "node", "go", "sh"] {
+            let Some(binary) = which_on_path(tool) else {
+                continue; // Not installed here; nothing to assert.
+            };
+            let dir = binary.parent().unwrap();
+            assert!(
+                policy.exec_paths.iter().any(|granted| dir.starts_with(granted)),
+                "{tool} lives in {} which the policy never grants exec on",
+                dir.display()
+            );
+        }
+    }
+
+    /// Find a program on `PATH`, so the test asserts about this machine rather
+    /// than about the machine it was written on.
+    fn which_on_path(program: &str) -> Option<PathBuf> {
+        path_directories().into_iter().map(|dir| dir.join(program)).find(|p| p.is_file())
+    }
 
     #[test]
     fn a_new_policy_grants_nothing() {
