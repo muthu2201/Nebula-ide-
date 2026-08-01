@@ -598,6 +598,28 @@ mod tests {
     use crate::types::{DiagnosticSeverity, Range};
     use tokio::io::{AsyncWriteExt, duplex};
 
+    /// The `file:` URI the fake server reports a definition at, spelled the way
+    /// the host platform spells one.
+    ///
+    /// A POSIX file URI has no Windows path at all: `file:///project/src/lib.rs`
+    /// carries no drive letter, so `Url::to_file_path` rejects it and `path()`
+    /// gives `None`. A fixture that hardcodes one therefore tests URI
+    /// resolution on Unix and nothing whatsoever anywhere else — which is what
+    /// it was doing, invisibly, because the Windows job never got this far.
+    #[cfg(windows)]
+    const TARGET_URI: &str = "file:///C:/project/src/lib.rs";
+    #[cfg(not(windows))]
+    const TARGET_URI: &str = "file:///project/src/lib.rs";
+
+    /// The same location as a path.
+    fn target_path() -> std::path::PathBuf {
+        if cfg!(windows) {
+            std::path::PathBuf::from(r"C:\project\src\lib.rs")
+        } else {
+            std::path::PathBuf::from("/project/src/lib.rs")
+        }
+    }
+
     /// A real LSP server implementation, driven over an in-memory duplex.
     ///
     /// It parses the framing, enforces the lifecycle, and answers with
@@ -714,7 +736,7 @@ mod tests {
                             "jsonrpc": "2.0",
                             "id": id,
                             "result": [{
-                                "targetUri": "file:///project/src/lib.rs",
+                                "targetUri": TARGET_URI,
                                 "targetRange": {
                                     "start": { "line": 10, "character": 0 },
                                     "end": { "line": 12, "character": 1 }
@@ -843,13 +865,13 @@ mod tests {
 
         let locations = client.goto_definition(path, &buffer, 12).await.unwrap();
         assert_eq!(locations.len(), 1);
-        assert_eq!(locations[0].uri, "file:///project/src/lib.rs");
+        assert_eq!(locations[0].uri, TARGET_URI);
         assert_eq!(
             locations[0].range.start,
             Position::new(10, 7),
             "targetSelectionRange is the one to jump to, not targetRange"
         );
-        assert_eq!(locations[0].path().unwrap(), std::path::PathBuf::from("/project/src/lib.rs"));
+        assert_eq!(locations[0].path().unwrap(), target_path());
     }
 
     #[tokio::test]

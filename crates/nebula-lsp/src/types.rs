@@ -325,14 +325,17 @@ mod tests {
 
     #[test]
     fn locations_resolve_to_paths() {
-        let location = Location {
-            uri: "file:///home/user/project/src/main.rs".to_string(),
-            range: Range::default(),
+        // Spelled the way the host platform spells a file URI. A POSIX one has
+        // no Windows path — no drive letter means `to_file_path` rejects it —
+        // so a hardcoded `file:///home/…` asserts nothing at all there.
+        let (uri, expected) = if cfg!(windows) {
+            ("file:///C:/home/user/project/src/main.rs", r"C:\home\user\project\src\main.rs")
+        } else {
+            ("file:///home/user/project/src/main.rs", "/home/user/project/src/main.rs")
         };
-        assert_eq!(
-            location.path().unwrap(),
-            std::path::PathBuf::from("/home/user/project/src/main.rs")
-        );
+
+        let location = Location { uri: uri.to_string(), range: Range::default() };
+        assert_eq!(location.path().unwrap(), std::path::PathBuf::from(expected));
     }
 
     #[test]
@@ -343,7 +346,16 @@ mod tests {
 
     #[test]
     fn paths_convert_to_uris_and_back() {
-        let path = std::path::Path::new("/tmp/some dir/file.rs");
+        // An absolute path on the platform running the test. `/tmp/…` is not
+        // one on Windows, and `from_file_path` rejects a relative path — so the
+        // fallback in `path_to_uri` produced an unencoded `file:///tmp/some
+        // dir/file.rs` and the percent-encoding assertion below failed for a
+        // reason that says nothing about the encoding.
+        let path: &std::path::Path = if cfg!(windows) {
+            std::path::Path::new(r"C:\tmp\some dir\file.rs")
+        } else {
+            std::path::Path::new("/tmp/some dir/file.rs")
+        };
         let uri = path_to_uri(path);
         assert!(uri.starts_with("file:///"));
         // A space must be percent-encoded, or the server rejects the URI.

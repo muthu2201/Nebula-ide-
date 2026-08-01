@@ -116,7 +116,14 @@ jobs:
           # backtrace affordable is being able to re-run the failure, not the
           # operating system.
           RUST_BACKTRACE: 0
-        run: cargo test --workspace --all-features
+        # `--no-fail-fast`, because the default hides work. `cargo test` stops
+        # at the first test binary that fails, so a platform with faults in
+        # several crates reports them one per run and each fix reveals the next.
+        # Windows went `nebula-exec` → `nebula-index` → `nebula-lsp` that way,
+        # three round trips of roughly half an hour each, for three unrelated
+        # sets of Unix assumptions that were all present from the start and
+        # could all have been read off a single run.
+        run: cargo test --workspace --all-features --no-fail-fast
 
       - name: Show what Seatbelt refused
         if: always() && matrix.os == 'macos-15'
