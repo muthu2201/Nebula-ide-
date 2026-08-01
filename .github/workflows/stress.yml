@@ -128,6 +128,17 @@ jobs:
           # Filtered to the six toolchains the fixture runs. Unfiltered, the
           # window is dominated by system daemons losing arguments with their
           # own profiles at boot, and the first N lines of it are all theirs.
+          # Go is the last fixture still failing, with its own standard
+          # library unreadable at `GOROOT/src`. The policy grants the parent of
+          # every `PATH` entry, which is `GOROOT` when `go` is reached through
+          # `GOROOT/bin` — so it is not, and the question is what it is reached
+          # through instead. `which -a` answers that; guessing has cost three
+          # rounds already.
+          echo "--- where the go toolchain actually is ---"
+          which -a go || echo "go is not on PATH at all"
+          go env GOROOT GOPATH 2>/dev/null || echo "go env unavailable"
+          echo "PATH=$PATH"
+
           echo "--- refused to a process this job started ---"
           grep -Ei 'Sandbox: (sh|bash|dash|cat|env|python3?|node|go|cc|clang|ld|rustc|cargo|sandbox-exec|nebula[a-z-]*)\(' \
             "${RUNNER_TEMP}/denials.txt" | tail -100 \
