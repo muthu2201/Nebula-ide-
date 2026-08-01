@@ -52,6 +52,15 @@ fn system_read_directories() -> Vec<PathBuf> {
     #[cfg(unix)]
     dirs.extend(["/usr", "/lib", "/lib64", "/bin", "/etc", "/opt"].map(PathBuf::from));
 
+    // macOS keeps the dyld shared cache and the system frameworks under
+    // `/System`, and every dynamically linked binary reads them before `main`
+    // runs. Without them nothing starts at all — which is why the macOS stress
+    // run failed all six programs identically, including `/bin/sh`, whose own
+    // directory was granted. `/private` carries the real `/tmp` and `/var`,
+    // which are symlinks into it and so resolve there.
+    #[cfg(target_os = "macos")]
+    dirs.extend(["/System", "/Library", "/private"].map(PathBuf::from));
+
     #[cfg(windows)]
     for var in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "LOCALAPPDATA"] {
         if let Some(value) = std::env::var_os(var) {
