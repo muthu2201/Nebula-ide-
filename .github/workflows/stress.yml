@@ -85,7 +85,8 @@ jobs:
       - name: Use the software Vulkan driver
         if: startsWith(matrix.os, 'ubuntu') && matrix.renderer == 'gpu'
         run: |
-          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+          # Named after the architecture, so it cannot be hardcoded.
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.$(uname -m).json" >> "$GITHUB_ENV"
 
       - name: Build the harness with optimisations
         # A stress run against a debug build measures the debug build.

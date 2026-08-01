@@ -83,9 +83,19 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           # lavapipe gives the GPU backend a real adapter on a headless runner,
-          # so the wgpu path is exercised rather than skipped.
-          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
-          echo "NEBULA_REQUIRE_GPU=1" >> "$GITHUB_ENV"
+          # so the wgpu path is exercised rather than skipped. The ICD file is
+          # named after the architecture: hardcoding the x86_64 name matched
+          # nothing on the arm runner, and NEBULA_REQUIRE_GPU then demanded an
+          # adapter that had never been configured, turning what should have
+          # been a skip into nine failures. Only require a GPU once one is
+          # actually there.
+          icd="/usr/share/vulkan/icd.d/lvp_icd.$(uname -m).json"
+          if [ -f "$icd" ]; then
+            echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+            echo "NEBULA_REQUIRE_GPU=1" >> "$GITHUB_ENV"
+          else
+            echo "no lavapipe ICD at $icd — the GPU tests will skip"
+          fi
 
       - run: cargo test --workspace --all-features
 

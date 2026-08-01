@@ -141,7 +141,12 @@ impl Policy {
             // Toolchain caches. Granting the whole home directory would defeat
             // the point, so only the specific caches a build needs are added.
             for cache in [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go"] {
-                builder = builder.write(home.join(cache));
+                let path = home.join(cache);
+                // Exec as well as write: on macOS `~/.cargo/bin/rustc` is a
+                // symlink into `~/.rustup/toolchains/…`, and Seatbelt evaluates
+                // the path it resolves to. Granting exec on the `PATH`
+                // directory alone left `rustc` unable to start.
+                builder = builder.exec(&path).write(path);
             }
         }
         // `temp_dir` reads TMPDIR, TMP and TEMP as the platform expects, and
