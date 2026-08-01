@@ -281,7 +281,31 @@ impl Policy {
         if let Some(home) = dirs_home() {
             // Toolchain caches. Granting the whole home directory would defeat
             // the point, so only the specific caches a build needs are added.
-            for cache in [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go"] {
+            //
+            // `.cache` is the XDG name and it is a Linux name. macOS puts the
+            // same thing under `Library/Caches`, and a build that cannot write
+            // its cache does not degrade — it fails, and it does not
+            // necessarily say so. `go run` reported
+            //
+            //     package fmt is not in std (…/go/1.25.12/arm64/src/fmt)
+            //
+            // which reads as a missing read grant on GOROOT and is nothing of
+            // the kind: GOROOT was granted and never refused. What the kernel
+            // actually refused was three `file-write-create` under
+            // `~/Library/Caches/go-build`, and the standard library became
+            // unfindable downstream of that. Two rounds went into the read
+            // paths on the strength of that message; the denial log named the
+            // real one immediately.
+            //
+            // This is the same defect as the original `/usr`, `/lib`, `/bin`,
+            // `/etc` read list — a Unix inventory standing in for a platform
+            // that spells these things differently.
+            #[cfg(target_os = "macos")]
+            let caches = [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go", "Library/Caches"];
+            #[cfg(not(target_os = "macos"))]
+            let caches = [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go"];
+
+            for cache in caches {
                 let path = home.join(cache);
                 // Exec as well as write: on macOS `~/.cargo/bin/rustc` is a
                 // symlink into `~/.rustup/toolchains/…`, and Seatbelt evaluates
