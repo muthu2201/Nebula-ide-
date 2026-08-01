@@ -9,7 +9,7 @@
 //! that is actually achievable for a local file, and it is enough to answer the
 //! question that matters after an incident: "is this record intact?"
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 

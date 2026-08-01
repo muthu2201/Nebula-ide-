@@ -25,12 +25,19 @@ pub const DEFAULT_GROUP_INTERVAL: Duration = Duration::from_millis(600);
 pub const DEFAULT_CAPACITY: usize = 2048;
 
 /// One undoable step.
+///
+/// The two transaction lists are sequences, not sets. A grouped run of typing
+/// produces one transaction per keystroke, and each one is expressed in the
+/// coordinates that were current when it ran — so they can only be replayed in
+/// order, never flattened into a single transaction. Getting that wrong is how
+/// redo-after-grouped-typing ends up applying an edit past the end of the
+/// buffer.
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
-    /// The transaction that undoes this step.
-    pub undo: Transaction,
-    /// The transaction that redoes it.
-    pub redo: Transaction,
+    /// The transactions that undo this step, in the order to apply them.
+    pub undo: Vec<Transaction>,
+    /// The transactions that redo it, in the order to apply them.
+    pub redo: Vec<Transaction>,
     /// Selections as they were *before* the edit, restored on undo.
     pub selections_before: SelectionSet,
     /// Selections as they were *after* the edit, restored on redo.
@@ -39,6 +46,34 @@ pub struct HistoryEntry {
     pub timestamp: Instant,
     /// Whether this entry may still absorb a following edit.
     pub open: bool,
+}
+
+impl HistoryEntry {
+    /// Replay this entry's undo transactions against `buffer`.
+    pub fn apply_undo(&self, buffer: &mut crate::text::TextBuffer) -> crate::Result<()> {
+        for transaction in &self.undo {
+            transaction.apply(buffer)?;
+        }
+        Ok(())
+    }
+
+    /// Replay this entry's redo transactions against `buffer`.
+    pub fn apply_redo(&self, buffer: &mut crate::text::TextBuffer) -> crate::Result<()> {
+        for transaction in &self.redo {
+            transaction.apply(buffer)?;
+        }
+        Ok(())
+    }
+
+    /// How many transactions this step groups together.
+    pub fn len(&self) -> usize {
+        self.redo.len()
+    }
+
+    /// Whether this step contains nothing. Never true for a recorded entry.
+    pub fn is_empty(&self) -> bool {
+        self.redo.is_empty()
+    }
 }
 
 /// The undo/redo stacks for one document.
@@ -106,11 +141,10 @@ impl History {
             && last.open
             && now.duration_since(last.timestamp) <= self.group_interval
         {
-            // Extend the open group. The undo of the combined group is the new
-            // undo followed by the old one (inverse order), and the redo is the
-            // old redo followed by the new one.
-            last.redo = concat(&last.redo, &redo);
-            last.undo = concat(&undo, &last.undo);
+            // Extend the open group. Redo replays forwards, so the new
+            // transaction goes last; undo replays backwards, so it goes first.
+            last.redo.push(redo);
+            last.undo.insert(0, undo);
             last.selections_after = selections_after;
             last.timestamp = now;
             return;
@@ -122,8 +156,8 @@ impl History {
         }
 
         self.undo_stack.push(HistoryEntry {
-            undo,
-            redo,
+            undo: vec![undo],
+            redo: vec![redo],
             selections_before,
             selections_after,
             timestamp: now,
@@ -206,31 +240,6 @@ impl History {
     }
 }
 
-/// Concatenate two transactions that are known to apply in sequence.
-///
-/// The second transaction's edits are expressed in coordinates *after* the
-/// first has run, so they cannot simply be merged into one set. Grouped typing
-/// is the only caller, and there the edits are strictly forward-moving single
-/// insertions, so we express the result as the union in first-transaction
-/// coordinates by mapping the second transaction's ranges backwards.
-fn concat(first: &Transaction, second: &Transaction) -> Transaction {
-    let mut out = first.clone();
-    for edit in second.edits() {
-        // Try to add the edit as-is; if it collides with an existing one, the
-        // group is no longer expressible as a single flat transaction and we
-        // fall back to keeping them adjacent by shifting.
-        if out.push(edit.clone()).is_err() {
-            // Collision: place the edit immediately after the colliding one.
-            let shifted = crate::edit::Edit {
-                range: crate::position::Range::new(edit.range.start, edit.range.end),
-                text: edit.text.clone(),
-            };
-            let _ = out.push(shifted);
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,11 +267,11 @@ mod tests {
         assert_eq!(buffer.to_string(), "start and more");
 
         let entry = history.undo().unwrap();
-        entry.undo.apply(&mut buffer).unwrap();
+        entry.apply_undo(&mut buffer).unwrap();
         assert_eq!(buffer.to_string(), "start");
 
         let entry = history.redo().unwrap();
-        entry.redo.apply(&mut buffer).unwrap();
+        entry.apply_redo(&mut buffer).unwrap();
         assert_eq!(buffer.to_string(), "start and more");
     }
 
@@ -277,7 +286,7 @@ mod tests {
         assert_eq!(history.undo_depth(), 1, "five keystrokes are one undo step");
 
         let entry = history.undo().unwrap();
-        entry.undo.apply(&mut buffer).unwrap();
+        entry.apply_undo(&mut buffer).unwrap();
         assert_eq!(buffer.to_string(), "", "undo removes the whole typed run");
     }
 
@@ -289,6 +298,61 @@ mod tests {
         history.commit_group();
         record_typing(&mut history, &mut buffer, 2, "cd");
         assert_eq!(history.undo_depth(), 2);
+    }
+
+    #[test]
+    fn redo_replays_a_grouped_run_of_typing() {
+        // The regression this guards: a group used to be flattened into one
+        // transaction, but each keystroke's edit is expressed in the
+        // coordinates current when it ran. Flattening produced a redo whose
+        // later edits pointed past the end of the undone buffer.
+        let mut buffer = TextBuffer::from_str("base");
+        let mut history = History::new();
+        for (index, c) in "+more".chars().enumerate() {
+            record_typing(&mut history, &mut buffer, 4 + index, &c.to_string());
+        }
+        assert_eq!(buffer.to_string(), "base+more");
+        assert_eq!(history.undo_depth(), 1, "the run should be one undo step");
+
+        let entry = history.undo().unwrap();
+        entry.apply_undo(&mut buffer).unwrap();
+        assert_eq!(buffer.to_string(), "base");
+
+        let entry = history.redo().unwrap();
+        entry.apply_redo(&mut buffer).unwrap();
+        assert_eq!(buffer.to_string(), "base+more");
+    }
+
+    #[test]
+    fn a_group_can_be_undone_and_redone_repeatedly() {
+        let mut buffer = TextBuffer::from_str("");
+        let mut history = History::new();
+        for (index, c) in "hello".chars().enumerate() {
+            record_typing(&mut history, &mut buffer, index, &c.to_string());
+        }
+
+        for _ in 0..3 {
+            let entry = history.undo().unwrap();
+            entry.apply_undo(&mut buffer).unwrap();
+            assert_eq!(buffer.to_string(), "");
+
+            let entry = history.redo().unwrap();
+            entry.apply_redo(&mut buffer).unwrap();
+            assert_eq!(buffer.to_string(), "hello");
+        }
+    }
+
+    #[test]
+    fn a_group_reports_how_many_edits_it_holds() {
+        let mut buffer = TextBuffer::from_str("");
+        let mut history = History::new();
+        for (index, c) in "abc".chars().enumerate() {
+            record_typing(&mut history, &mut buffer, index, &c.to_string());
+        }
+
+        let entry = history.undo().unwrap();
+        assert_eq!(entry.len(), 3);
+        assert!(!entry.is_empty());
     }
 
     #[test]
@@ -311,7 +375,7 @@ mod tests {
         history.commit_group();
 
         let entry = history.undo().unwrap();
-        entry.undo.apply(&mut buffer).unwrap();
+        entry.apply_undo(&mut buffer).unwrap();
         assert!(history.can_redo());
 
         record_typing(&mut history, &mut buffer, 0, "b");
@@ -335,7 +399,7 @@ mod tests {
 
         // Undoing back to the saved point makes the document clean again.
         let entry = history.undo().unwrap();
-        entry.undo.apply(&mut buffer).unwrap();
+        entry.apply_undo(&mut buffer).unwrap();
         assert!(!history.is_modified());
     }
 
@@ -376,7 +440,7 @@ mod tests {
         assert_eq!(buffer.to_string(), "X Y Z");
 
         let entry = history.undo().unwrap();
-        entry.undo.apply(&mut buffer).unwrap();
+        entry.apply_undo(&mut buffer).unwrap();
         assert_eq!(buffer.to_string(), "a b c");
         assert_eq!(history.undo_depth(), 0);
     }

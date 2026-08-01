@@ -1,0 +1,56 @@
+[package]
+name = "nebula-ide"
+description = "The Nebula IDE application."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+default-run = "nebula"
+
+[[bin]]
+name = "nebula"
+path = "src/main.rs"
+
+[features]
+default = ["gui"]
+# The window and the event loop. A headless build (CI, a container, a server)
+# drops winit entirely and still has `run`, `render` and `doctor`.
+gui = []
+
+[dependencies]
+nebula-agent.workspace = true
+nebula-ai.workspace = true
+nebula-core.workspace = true
+nebula-exec.workspace = true
+nebula-index.workspace = true
+nebula-license.workspace = true
+nebula-lsp.workspace = true
+nebula-mcp.workspace = true
+nebula-render.workspace = true
+nebula-sandbox.workspace = true
+nebula-search.workspace = true
+nebula-syntax.workspace = true
+nebula-ui.workspace = true
+nebula-update.workspace = true
+nebula-vfs.workspace = true
+nebula-wasm-host.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+console.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+winit.workspace = true
+# Used at runtime, not only in tests: saving writes through a temporary file in
+# the target's directory and renames over it.
+tempfile.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

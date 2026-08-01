@@ -26,7 +26,7 @@ use cosmic_text::{
 use parking_lot::Mutex;
 use tiny_skia::{Paint, Pixmap, Rect as SkRect, Transform};
 
-use crate::scene::{Color, Rect, TextRun};
+use crate::scene::{Rect, TextRun};
 use crate::{RenderError, Result};
 
 /// The bundled regular face.

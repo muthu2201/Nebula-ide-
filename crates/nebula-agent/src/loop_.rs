@@ -19,7 +19,7 @@ use nebula_ai::{
 use crate::audit::AuditLog;
 use crate::capability::GrantSet;
 use crate::tools::{ToolContext, ToolRegistry};
-use crate::{AgentError, Result};
+use crate::Result;
 
 /// How the agent should behave.
 #[derive(Debug, Clone)]

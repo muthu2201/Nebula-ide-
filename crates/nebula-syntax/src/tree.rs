@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use nebula_core::{Range, TextBuffer, TransactionResult};
+use nebula_core::{Range, TextBuffer};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::grammar::Grammar;
@@ -85,14 +85,12 @@ impl SyntaxTree {
         buffer_before: &TextBuffer,
         buffer_after: &TextBuffer,
         transaction: &nebula_core::Transaction,
-        result: &TransactionResult,
         new_version: u64,
     ) -> Result<()> {
         for edit in transaction.edits() {
             let input_edit = to_input_edit(buffer_before, buffer_after, edit, transaction)?;
             self.tree.edit(&input_edit);
         }
-        let _ = result;
 
         let new_tree = parse_buffer(&mut self.parser, buffer_after, Some(&self.tree))
             .ok_or_else(|| SyntaxError::ParseFailed(self.grammar.language_id.clone()))?;
@@ -281,8 +279,8 @@ mod tests {
             source.find("1").unwrap(),
             "compute(",
         ));
-        let result = transaction.apply(&mut after).unwrap();
-        tree.apply(&before, &after, &transaction, &result, 1).unwrap();
+        transaction.apply(&mut after).unwrap();
+        tree.apply(&before, &after, &transaction, 1).unwrap();
 
         let registry = GrammarRegistry::new();
         let fresh =
@@ -306,8 +304,8 @@ mod tests {
             Edit::insert(23, "cc"),
         ])
         .unwrap();
-        let result = transaction.apply(&mut after).unwrap();
-        tree.apply(&before, &after, &transaction, &result, 1).unwrap();
+        transaction.apply(&mut after).unwrap();
+        tree.apply(&before, &after, &transaction, 1).unwrap();
 
         let registry = GrammarRegistry::new();
         let fresh = SyntaxTree::parse(registry.get("rust").unwrap(), &after, 1).unwrap();
@@ -323,8 +321,8 @@ mod tests {
         let end = source.find("    let used").unwrap();
         let mut after = before.clone();
         let transaction = Transaction::single(Edit::delete(Range::new(start, end)));
-        let result = transaction.apply(&mut after).unwrap();
-        tree.apply(&before, &after, &transaction, &result, 1).unwrap();
+        transaction.apply(&mut after).unwrap();
+        tree.apply(&before, &after, &transaction, 1).unwrap();
 
         let registry = GrammarRegistry::new();
         let fresh = SyntaxTree::parse(registry.get("rust").unwrap(), &after, 1).unwrap();
@@ -341,8 +339,8 @@ mod tests {
         let insert_at = before.byte_to_char(source.find("🌌").unwrap()).unwrap();
         let mut after = before.clone();
         let transaction = Transaction::single(Edit::insert(insert_at, "🚀 and "));
-        let result = transaction.apply(&mut after).unwrap();
-        tree.apply(&before, &after, &transaction, &result, 1).unwrap();
+        transaction.apply(&mut after).unwrap();
+        tree.apply(&before, &after, &transaction, 1).unwrap();
 
         let registry = GrammarRegistry::new();
         let fresh = SyntaxTree::parse(registry.get("rust").unwrap(), &after, 1).unwrap();

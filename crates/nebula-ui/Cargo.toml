@@ -1,0 +1,25 @@
+[package]
+name = "nebula-ui"
+description = "Nebula IDE user interface: editor viewport, layout, input handling and theming."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+nebula-core.workspace = true
+nebula-render.workspace = true
+nebula-syntax.workspace = true
+nebula-vfs.workspace = true
+
+winit.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

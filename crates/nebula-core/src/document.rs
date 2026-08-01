@@ -274,7 +274,7 @@ impl Document {
         let Some(entry) = self.history.undo() else {
             return Ok(false);
         };
-        entry.undo.apply(&mut self.buffer)?;
+        entry.apply_undo(&mut self.buffer)?;
         self.selections = entry.selections_before;
         self.selections.clamp(&self.buffer);
         self.version += 1;
@@ -286,7 +286,7 @@ impl Document {
         let Some(entry) = self.history.redo() else {
             return Ok(false);
         };
-        entry.redo.apply(&mut self.buffer)?;
+        entry.apply_redo(&mut self.buffer)?;
         self.selections = entry.selections_after;
         self.selections.clamp(&self.buffer);
         self.version += 1;
