@@ -102,7 +102,17 @@ jobs:
             echo "no Vulkan device; the GPU tests will skip"
           fi
 
-      - run: cargo test --workspace --all-features
+      - name: Run the test suite
+        env:
+          # Every macOS and Windows failure so far has been fully described by
+          # its panic message and made unreadable by the ~28 tokio frames
+          # printed underneath it — the panic scrolls out of the log and the
+          # cause has to be guessed. The backtrace earns its place on Linux,
+          # where a failure can be reproduced and stepped through; on the two
+          # platforms nobody here has a machine for, the message is the whole
+          # of the evidence and it needs to be visible.
+          RUST_BACKTRACE: ${{ startsWith(matrix.os, 'ubuntu') && '1' || '0' }}
+        run: cargo test --workspace --all-features
 
       - name: Check that the headless build stands alone
         run: cargo check -p nebula-ide --no-default-features

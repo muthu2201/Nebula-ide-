@@ -80,7 +80,13 @@ pub fn system_read_directories() -> Vec<PathBuf> {
     dirs.extend(
         [
             "/System/Library",
-            // Where macOS 13+ relocates the shared cache.
+            // macOS 13 moved the shared cache into a *cryptex*, a separately
+            // sealed image. It is mounted twice: at its backing location under
+            // `/System/Volumes/Preboot`, and at `/System/Cryptexes/OS`, which
+            // is the path dyld actually opens. Naming only the first is how a
+            // profile can list the shared cache and still leave every
+            // dynamically linked program dying on `SIGABRT` before `main`.
+            "/System/Cryptexes",
             "/System/Volumes/Preboot/Cryptexes",
             "/Library",
             // `/etc` and `/var` are symlinks into `/private`, and Seatbelt

@@ -559,6 +559,7 @@ pub fn probe_enforcement(policy: &Policy) -> Result<Enforcement> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nebula_sandbox::PolicyBuilder;
 
     #[tokio::test]
     async fn a_relative_program_resolves_against_the_working_directory() {
@@ -566,16 +567,27 @@ mod tests {
         // to wherever the editor was started, so a build tool that produced a
         // binary and then ran it reported its own output as missing.
         let dir = tempfile::TempDir::new().unwrap();
-        let script = dir.path().join("hello.sh");
-        std::fs::write(&script, "#!/bin/sh\necho from the working directory\n").unwrap();
 
+        // The script has to be one the platform will actually start. Windows
+        // has no shebang line: handing it a `.sh` gets `%1 is not a valid
+        // Win32 application` from `CreateProcess`, which says nothing about
+        // the resolution this test is here to check.
         #[cfg(unix)]
-        {
+        let program = {
             use std::os::unix::fs::PermissionsExt;
+            let script = dir.path().join("hello.sh");
+            std::fs::write(&script, "#!/bin/sh\necho from the working directory\n").unwrap();
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+            "./hello.sh"
+        };
+        #[cfg(windows)]
+        let program = {
+            let script = dir.path().join("hello.bat");
+            std::fs::write(&script, "@echo off\r\necho from the working directory\r\n").unwrap();
+            "./hello.bat"
+        };
 
-        let output = Command::new("./hello.sh").current_dir(dir.path()).run().await.unwrap();
+        let output = Command::new(program).current_dir(dir.path()).run().await.unwrap();
 
         assert!(output.is_success(), "{}", output.stderr);
         assert!(output.stdout.contains("from the working directory"), "{}", output.stdout);
@@ -591,8 +603,23 @@ mod tests {
 
     #[tokio::test]
     async fn an_absolute_program_still_runs() {
+        // Naming the program by absolute path is the point, so the path has to
+        // be one that exists on the machine running the test. `/bin/sh` is a
+        // Unix fact, and on Windows it produced `NotFound("/bin/sh")` — the
+        // resolution behaving correctly about a program that was never there.
+        #[cfg(unix)]
         let output = Command::new("/bin/sh").args(["-c", "echo absolute"]).run().await.unwrap();
-        assert!(output.stdout.contains("absolute"));
+        #[cfg(windows)]
+        let output = {
+            // `COMSPEC` is where Windows itself records the command processor;
+            // hardcoding `C:\Windows` assumes a system root that installs are
+            // free to move.
+            let shell = std::env::var("COMSPEC")
+                .unwrap_or_else(|_| r"C:\Windows\System32\cmd.exe".to_string());
+            assert!(PathBuf::from(&shell).is_absolute(), "COMSPEC was not absolute: {shell}");
+            Command::new(shell).args(["/C", "echo absolute"]).run().await.unwrap()
+        };
+        assert!(output.stdout.contains("absolute"), "{output:?}");
     }
     use std::fs;
     use tempfile::TempDir;
@@ -802,21 +829,72 @@ mod tests {
         true
     }
 
-    /// A policy allowing the system directories a process needs to start, plus
-    /// `allowed`, but deliberately not `forbidden`.
+    /// The half of a test policy that exists only so the process can start:
+    /// the system read list, and exec from the directories the fixtures live
+    /// in. Every sandbox test here builds on this and nothing else.
     ///
-    /// The system half comes from the library rather than a list written here.
-    /// A hand-written `/usr`, `/lib`, `/bin`, `/etc` is a Linux inventory, and
-    /// on macOS it omits the dyld shared cache under `/System`: `cat` then dies
-    /// before `main`, the two "granted access works" tests fail, and — worse —
-    /// the "denied access is refused" tests keep passing for the wrong reason,
-    /// because a process that never starts also exits non-zero.
-    fn confining_policy(allowed: &std::path::Path) -> Policy {
-        let mut builder = Policy::builder().label("test-confinement");
+    /// A helper rather than a list written out at each call site, because a
+    /// hand-written `/usr`, `/lib`, `/bin`, `/etc` is a Linux inventory that
+    /// omits the dyld shared cache, and a process that cannot reach the cache
+    /// dies before `main`. It has now been written out three times and fixed
+    /// twice: the copy in `policy.rs`, then the one here — and then the one in
+    /// the write test below, which the previous fix walked straight past
+    /// because it was looking for this helper rather than for the paths.
+    fn startable_policy(label: &str) -> PolicyBuilder {
+        let mut builder = Policy::builder().label(label);
         for dir in nebula_sandbox::system_read_directories() {
             builder = builder.read(dir);
         }
-        builder.exec("/usr/bin").exec("/bin").read(allowed.to_path_buf()).build()
+        builder.exec("/usr/bin").exec("/bin")
+    }
+
+    /// Assert that a denied run was denied *by the sandbox*, not by dying.
+    ///
+    /// A "denied access is refused" test that only checks for a non-zero exit
+    /// proves nothing: a process the loader kills before `main` also exits
+    /// non-zero, so the test stays green on a platform where the policy is so
+    /// broken that nothing starts at all. That is what happened on macOS —
+    /// every confined process died on `SIGABRT` and these tests reported
+    /// success throughout.
+    ///
+    /// There are two ways to never start, and each has its own signature. The
+    /// loader killing a process leaves a signal rather than an exit code. The
+    /// macOS wrapper failing to hand off leaves an ordinary exit code, but
+    /// `sandbox-exec` names itself when it does.
+    fn assert_the_process_actually_ran(output: &Output, policy: &Policy) {
+        assert!(
+            matches!(output.status, Status::Exited(_)),
+            "the process was killed before it ran, so this proves nothing about the policy: {}",
+            diagnose(output, policy)
+        );
+        assert!(
+            !output.stderr.contains("sandbox-exec:"),
+            "the wrapper never reached the program, so this proves nothing about the policy: {}",
+            diagnose(output, policy)
+        );
+    }
+
+    /// A policy allowing `allowed` to be read, and deliberately nothing else
+    /// beyond what any process needs to start.
+    fn confining_policy(allowed: &std::path::Path) -> Policy {
+        startable_policy("test-confinement").read(allowed.to_path_buf()).build()
+    }
+
+    /// Everything a sandboxed run reports, plus the profile it was given.
+    ///
+    /// On macOS a denied process writes nothing to either stream and dies on a
+    /// signal, so `output` alone cannot say *which* rule was missing. The
+    /// profile is the other half of that evidence, and printing it is the
+    /// difference between a failure that names its cause and one that needs a
+    /// machine nobody in CI has.
+    fn diagnose(output: &Output, policy: &Policy) -> String {
+        let profile = if cfg!(target_os = "macos") {
+            nebula_sandbox::macos::build_profile(policy)
+                .unwrap_or_else(|e| format!("<profile could not be built: {e}>"))
+        } else {
+            policy.describe()
+        };
+        format!("{output:?}\n--- policy as applied ---\n{profile}")
     }
 
     #[tokio::test]
@@ -826,16 +904,17 @@ mod tests {
         }
         let allowed = TempDir::new().unwrap();
         fs::write(allowed.path().join("ok.txt"), b"readable").unwrap();
+        let policy = confining_policy(allowed.path());
 
         let output = Command::new("cat")
             .arg(allowed.path().join("ok.txt").display().to_string())
-            .sandbox(confining_policy(allowed.path()))
+            .sandbox(policy.clone())
             .timeout(Duration::from_secs(20))
             .run()
             .await
             .unwrap();
 
-        assert!(output.is_success(), "granted read failed: {output:?}");
+        assert!(output.is_success(), "granted read failed: {}", diagnose(&output, &policy));
         assert_eq!(output.stdout, "readable");
     }
 
@@ -848,10 +927,11 @@ mod tests {
         let forbidden = TempDir::new().unwrap();
         let secret = forbidden.path().join("secret.txt");
         fs::write(&secret, b"should never be read").unwrap();
+        let policy = confining_policy(allowed.path());
 
         let output = Command::new("cat")
             .arg(secret.display().to_string())
-            .sandbox(confining_policy(allowed.path()))
+            .sandbox(policy.clone())
             .timeout(Duration::from_secs(20))
             .run()
             .await
@@ -859,12 +939,15 @@ mod tests {
 
         assert!(
             !output.is_success(),
-            "the sandbox let a process read outside its policy: {output:?}"
+            "the sandbox let a process read outside its policy: {}",
+            diagnose(&output, &policy)
         );
         assert!(
             !output.stdout.contains("should never be read"),
-            "secret content leaked: {output:?}"
+            "secret content leaked: {}",
+            diagnose(&output, &policy)
         );
+        assert_the_process_actually_ran(&output, &policy);
     }
 
     #[tokio::test]
@@ -875,18 +958,24 @@ mod tests {
         let allowed = TempDir::new().unwrap();
         let forbidden = TempDir::new().unwrap();
         let target = forbidden.path().join("written.txt");
+        let policy = confining_policy(allowed.path());
 
         let output = Command::new("sh")
             .arg("-c")
             .arg(format!("echo data > {}", target.display()))
-            .sandbox(confining_policy(allowed.path()))
+            .sandbox(policy.clone())
             .timeout(Duration::from_secs(20))
             .run()
             .await
             .unwrap();
 
-        assert!(!output.is_success(), "a write outside the policy succeeded: {output:?}");
+        assert!(
+            !output.is_success(),
+            "a write outside the policy succeeded: {}",
+            diagnose(&output, &policy)
+        );
         assert!(!target.exists(), "the file was created despite the policy");
+        assert_the_process_actually_ran(&output, &policy);
     }
 
     #[tokio::test]
@@ -897,28 +986,22 @@ mod tests {
         let workspace = TempDir::new().unwrap();
         let target = workspace.path().join("output.txt");
 
-        let policy = Policy::builder()
-            .label("writable-workspace")
-            .read("/usr")
-            .read("/lib")
-            .read("/lib64")
-            .read("/bin")
-            .read("/etc")
-            .exec("/usr/bin")
-            .exec("/bin")
-            .write(workspace.path().to_path_buf())
-            .build();
+        // The system read list comes from the library, like every other policy
+        // here. Spelling it out was what kept this test failing on macOS after
+        // the identical list two functions up had already been fixed.
+        let policy =
+            startable_policy("writable-workspace").write(workspace.path().to_path_buf()).build();
 
         let output = Command::new("sh")
             .arg("-c")
             .arg(format!("echo data > {}", target.display()))
-            .sandbox(policy)
+            .sandbox(policy.clone())
             .timeout(Duration::from_secs(20))
             .run()
             .await
             .unwrap();
 
-        assert!(output.is_success(), "a permitted write failed: {output:?}");
+        assert!(output.is_success(), "a permitted write failed: {}", diagnose(&output, &policy));
         assert_eq!(fs::read_to_string(&target).unwrap().trim(), "data");
     }
 

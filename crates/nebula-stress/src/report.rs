@@ -101,9 +101,23 @@ impl PhaseReport {
         self.measurements.iter().find(|m| m.name == name)
     }
 
-    /// Whether everything in this phase held.
+    /// Whether everything in this phase held, budgets included.
     pub fn passed(&self) -> bool {
         self.failures.is_empty() && self.measurements.iter().all(Measurement::within_budget)
+    }
+
+    /// Whether this phase held under the rule the run is actually being judged
+    /// by.
+    ///
+    /// [`Report::failures`] drops budget overruns when `budgets_enforced` is
+    /// false; the phase headings did not, so a run that had just announced
+    /// "budgets were recorded, not enforced" went on to label three phases
+    /// **FAILED** for nothing but slow frames, while listing no failure for
+    /// them and exiting on the strength of something else entirely. The two
+    /// verdicts have to come from the same rule or the report contradicts
+    /// itself.
+    pub fn passed_under(&self, budgets_enforced: bool) -> bool {
+        if budgets_enforced { self.passed() } else { self.failures.is_empty() }
     }
 
     /// Every reason this phase did not pass, in words.
@@ -367,9 +381,17 @@ impl Report {
 
         out.push_str("## Phases\n\n");
         for phase in &self.phases {
+            // Judged the same way the run itself is judged. `passed` always
+            // counts budgets, and on a run that has just said in the line above
+            // that budgets are recorded rather than enforced, that labelled
+            // three phases **FAILED** whose only entries were slow frames on a
+            // shared runner — phases that contributed nothing to the failure
+            // list and nothing to the exit status. A report that calls a phase
+            // failed and then declines to say why sends whoever reads it
+            // looking for a defect that is not there, which is what it did.
             let verdict = if phase.skipped {
                 "skipped"
-            } else if phase.passed() {
+            } else if phase.passed_under(self.budgets_enforced) {
                 "ok"
             } else {
                 "FAILED"
@@ -535,6 +557,21 @@ mod tests {
         assert_eq!(problems.len(), 1);
         assert!(problems[0].contains("over its"), "{}", problems[0]);
         assert!(problems[0].contains("example/thing"), "{}", problems[0]);
+    }
+
+    #[test]
+    fn a_phase_heading_is_judged_by_the_same_rule_as_the_run() {
+        // The macOS stress report said "budgets were recorded, not enforced"
+        // and then headed three phases **FAILED** on nothing but budgets,
+        // while listing no failure for any of them. Whichever rule the run is
+        // judged by, the headings follow it.
+        let phase = phase_with_budget(Duration::from_millis(40), Duration::from_millis(8));
+        assert!(!phase.passed_under(true), "an overrun fails when budgets are enforced");
+        assert!(phase.passed_under(false), "an overrun is not a failure when they are not");
+
+        let mut broken = PhaseReport::new("example");
+        broken.fail("the editor lost a keystroke");
+        assert!(!broken.passed_under(false), "correctness counts either way");
     }
 
     #[test]
