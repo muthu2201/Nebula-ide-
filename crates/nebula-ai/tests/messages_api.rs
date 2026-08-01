@@ -276,11 +276,9 @@ async fn a_stream_reassembles_correctly_from_awkward_chunks() {
                 saw_start = true;
             }
             StreamEvent::TextDelta { text: delta } => text.push_str(&delta),
-            StreamEvent::End { stop_reason, usage } => {
-                if stop_reason.is_some() {
-                    assert_eq!(stop_reason, Some(StopReason::EndTurn));
-                    final_usage = Some(usage);
-                }
+            StreamEvent::End { stop_reason: Some(stop_reason), usage } => {
+                assert_eq!(stop_reason, StopReason::EndTurn);
+                final_usage = Some(usage);
             }
             _ => {}
         }

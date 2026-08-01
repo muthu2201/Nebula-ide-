@@ -42,6 +42,29 @@ pub struct Policy {
     pub label: String,
 }
 
+/// The system locations a toolchain reads from, for this platform.
+///
+/// Every `PATH` directory is included on all platforms — a binary that can be
+/// executed has to be readable — plus the platform's own system roots.
+fn system_read_directories() -> Vec<PathBuf> {
+    let mut dirs = path_directories();
+
+    #[cfg(unix)]
+    dirs.extend(["/usr", "/lib", "/lib64", "/bin", "/etc", "/opt"].map(PathBuf::from));
+
+    #[cfg(windows)]
+    for var in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "LOCALAPPDATA"] {
+        if let Some(value) = std::env::var_os(var) {
+            let path = PathBuf::from(value);
+            if path.is_absolute() {
+                dirs.push(path);
+            }
+        }
+    }
+
+    dirs
+}
+
 /// The directories on `PATH`, in order, skipping empty and relative entries.
 ///
 /// Relative entries are dropped because a sandbox rule has to name a fixed
@@ -85,18 +108,18 @@ impl Policy {
     /// This is the profile that runs `cargo test` on the user's behalf.
     pub fn project_tool(project_root: impl AsRef<Path>) -> Policy {
         let root = project_root.as_ref().to_path_buf();
-        let mut builder = Policy::builder()
-            .label("project-tool")
-            .write(&root)
-            // Toolchains read their own installation and write to caches
-            // outside the project; denying these makes every build fail.
-            .read("/usr")
-            .read("/lib")
-            .read("/lib64")
-            .read("/bin")
-            .read("/etc")
-            .read("/opt")
-            .network(NetworkAccess::Denied);
+        let mut builder =
+            Policy::builder().label("project-tool").write(&root).network(NetworkAccess::Denied);
+
+        // Toolchains read their own installation; denying that makes every
+        // build fail. Where "their own installation" *is* differs by platform,
+        // and a Unix path on Windows is not merely useless — it is not
+        // absolute, so `validate` rejects the whole policy and nothing runs at
+        // all. That is exactly how the Windows stress run failed every program
+        // before starting one, with "policy paths must be absolute, got /usr".
+        for dir in system_read_directories() {
+            builder = builder.read(dir);
+        }
 
         // Execution is granted for every directory on `PATH`, rather than a
         // fixed list of standard ones. A hardcoded list is a guess about where
@@ -121,20 +144,32 @@ impl Policy {
                 builder = builder.write(home.join(cache));
             }
         }
-        if let Ok(tmp) = std::env::var("TMPDIR") {
-            builder = builder.write(tmp);
-        }
-        builder = builder.write("/tmp");
+        // `temp_dir` reads TMPDIR, TMP and TEMP as the platform expects, and
+        // returns a real absolute path on all of them.
+        builder = builder.write(std::env::temp_dir());
         builder.build()
     }
 
     /// A read-only policy over one directory, for tools that only inspect.
     pub fn read_only(root: impl AsRef<Path>) -> Policy {
-        Policy::builder()
+        let mut builder = Policy::builder()
             .label("read-only")
             .read(root.as_ref().to_path_buf())
-            .network(NetworkAccess::Denied)
-            .build()
+            .network(NetworkAccess::Denied);
+
+        // A policy for running an inspection tool still has to let the tool
+        // start. Without this the policy cannot execute anything at all — not
+        // even `/usr/bin/true` — which makes it useless for the one thing it
+        // exists to do. The read-only part is about the *project*: the tool
+        // cannot write to it, and cannot reach the network.
+        for dir in system_read_directories() {
+            builder = builder.read(dir);
+        }
+        for dir in path_directories() {
+            builder = builder.exec(dir);
+        }
+
+        builder.build()
     }
 
     /// Whether the policy grants any filesystem access at all.
@@ -270,12 +305,24 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn a_project_tool_policy_is_valid_on_the_platform_it_was_built_for() {
+        // The Windows stress run failed every program with "policy paths must
+        // be absolute, got /usr", because the read paths were written as Unix
+        // literals. This runs on every platform CI covers and fails there.
+        // A platform-appropriate root, so a failure here is the library's
+        // fault and not the test's choice of argument.
+        Policy::project_tool(std::env::temp_dir().join("project"))
+            .validate()
+            .expect("a project-tool policy must be valid on its own platform");
+    }
+
+    #[test]
     fn a_project_tool_may_execute_the_programs_on_its_path() {
         // The bug this pins: exec was granted for a hardcoded `/usr/bin`,
         // `/usr/local/bin`, `/bin`. That list is right on Linux and wrong on
         // macOS, where the stress run failed to spawn rustc, python3, node and
         // go — every one of them lives outside it.
-        let policy = Policy::project_tool("/tmp/project");
+        let policy = Policy::project_tool(std::env::temp_dir().join("project"));
 
         for tool in ["rustc", "cargo", "python3", "node", "go", "sh"] {
             let Some(binary) = which_on_path(tool) else {

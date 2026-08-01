@@ -13,7 +13,7 @@
 //! standing risk, and the fallback if Apple removes it is to run agent tools in
 //! a local VM, as Anthropic's Claude Cowork does.
 //!
-//! Everything except [`apply`] and the `sandbox_init` binding is built on every
+//! Everything except `apply` and the `sandbox_init` binding is built on every
 //! platform. [`build_profile`] is pure string work, and the rules it enforces —
 //! deny-by-default, and no path escaping the profile's string literals — are
 //! worth testing on whatever machine happens to run the tests.

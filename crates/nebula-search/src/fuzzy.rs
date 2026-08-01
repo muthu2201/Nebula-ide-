@@ -91,9 +91,9 @@ impl FuzzyMatcher {
             }
         }
 
-        // Sort by score descending. `sort_by` is stable, so equal scores keep
+        // Sort by score descending. The sort is stable, so equal scores keep
         // the caller's input order and the picker does not jitter.
-        results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.sort_by_key(|result| std::cmp::Reverse(result.score));
         results
     }
 
