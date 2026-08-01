@@ -396,8 +396,13 @@ fn programs(fixture: &Fixture, options: &Options) -> Result<(PhaseReport, Vec<Pr
                     None,
                 );
                 if !run.passed {
+                    // The note carries how the process finished. Without it a
+                    // program killed by the sandbox and one that exited
+                    // quietly are the same empty string, which is exactly how
+                    // the macOS run left five of six failures undiagnosable.
+                    let how = run.note.as_deref().unwrap_or("no exit status recorded");
                     phase.fail(format!(
-                        "{} printed {:?}, expected {:?}",
+                        "{} printed {:?}, expected {:?} ({how})",
                         program.language, run.output, program.expect
                     ));
                 }
@@ -461,7 +466,7 @@ fn run_program(
                     output: output.combined(),
                     passed: false,
                     skipped: false,
-                    note: Some("the build failed".to_string()),
+                    note: Some(format!("the build failed: {}", output.status)),
                 });
             }
             Err(error) => {
@@ -494,7 +499,19 @@ fn run_program(
         Ok(output) => {
             let text = output.combined();
             let passed = output.is_success() && text.contains(program.expect);
-            let note = output.enforcement.clone();
+            // On success the interesting fact is what confinement was in
+            // force. On failure it is how the process died: a program the
+            // sandbox kills writes nothing to either stream, so an empty
+            // output plus "killed by signal 9" is the whole of the evidence,
+            // and reporting only the empty output throws it away.
+            let note = if passed {
+                output.enforcement.clone()
+            } else {
+                Some(match &output.enforcement {
+                    Some(enforcement) => format!("{}, under {enforcement}", output.status),
+                    None => output.status.to_string(),
+                })
+            };
             (text, passed, note)
         }
         Err(error) => (error.to_string(), false, Some("could not be started".to_string())),

@@ -46,20 +46,50 @@ pub struct Policy {
 ///
 /// Every `PATH` directory is included on all platforms — a binary that can be
 /// executed has to be readable — plus the platform's own system roots.
-fn system_read_directories() -> Vec<PathBuf> {
+///
+/// Public because anything that builds a policy a process must actually *start*
+/// under needs exactly this list, and a second hand-written copy of it is a bug
+/// waiting to happen. It has already happened twice: once here, where a Unix
+/// list omitted `/System` and no macOS binary could reach the dyld shared
+/// cache, and once in `nebula-exec`'s test helper, which kept its own copy of
+/// the same Unix list and so failed the same way on macOS after this one was
+/// fixed.
+pub fn system_read_directories() -> Vec<PathBuf> {
     let mut dirs = path_directories();
 
     #[cfg(unix)]
     dirs.extend(["/usr", "/lib", "/lib64", "/bin", "/etc", "/opt"].map(PathBuf::from));
 
     // macOS keeps the dyld shared cache and the system frameworks under
-    // `/System`, and every dynamically linked binary reads them before `main`
-    // runs. Without them nothing starts at all — which is why the macOS stress
-    // run failed all six programs identically, including `/bin/sh`, whose own
-    // directory was granted. `/private` carries the real `/tmp` and `/var`,
-    // which are symlinks into it and so resolve there.
+    // `/System/Library`, and every dynamically linked binary reads them before
+    // `main` runs. Without them nothing starts at all — which is why the macOS
+    // stress run failed all six programs identically, including `/bin/sh`,
+    // whose own directory was granted.
+    //
+    // Granted narrowly, and the narrowness is the point. The obvious spelling
+    // is `/System` and `/private`, and both are far wider than they look:
+    // `/System/Volumes/Data` is the mount point of the entire data volume, so
+    // granting `/System` grants read of every user file on the machine, and
+    // `/private/var/folders` holds every temporary directory, so granting
+    // `/private` grants read of anything any process has put in a temp dir.
+    // Either one quietly turns a deny-by-default policy into one that confines
+    // nothing on macOS, while every "denied access is refused" test keeps
+    // passing — those tests run a process that dies at startup, and a process
+    // that never starts also exits non-zero.
     #[cfg(target_os = "macos")]
-    dirs.extend(["/System", "/Library", "/private"].map(PathBuf::from));
+    dirs.extend(
+        [
+            "/System/Library",
+            // Where macOS 13+ relocates the shared cache.
+            "/System/Volumes/Preboot/Cryptexes",
+            "/Library",
+            // `/etc` and `/var` are symlinks into `/private`, and Seatbelt
+            // evaluates the path they resolve to.
+            "/private/etc",
+            "/private/var/db",
+        ]
+        .map(PathBuf::from),
+    );
 
     #[cfg(windows)]
     for var in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "LOCALAPPDATA"] {
@@ -317,6 +347,30 @@ fn dirs_home() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// Windows is excluded deliberately: `LOCALAPPDATA` is on its system list
+    /// and the temporary directory lives inside it, so this property does not
+    /// hold there. That is worth its own look, but asserting it here would be
+    /// claiming a fix that has not been made.
+    #[cfg(unix)]
+    #[test]
+    fn the_system_read_list_does_not_swallow_the_temporary_directory() {
+        // The macOS spellings `/System` and `/private` are much wider than they
+        // look — the whole data volume and every temp directory respectively —
+        // and granting either leaves a deny-by-default policy confining
+        // nothing. The "denied access is refused" tests cannot catch it: they
+        // run a process that dies at startup, which exits non-zero either way.
+        let temp = TempDir::new().unwrap();
+        let inside = temp.path().canonicalize().unwrap();
+        for dir in system_read_directories() {
+            assert!(
+                !inside.starts_with(&dir),
+                "{} grants read of a temporary directory ({})",
+                dir.display(),
+                inside.display()
+            );
+        }
+    }
 
     #[test]
     fn a_project_tool_policy_is_valid_on_the_platform_it_was_built_for() {

@@ -772,18 +772,19 @@ mod tests {
 
     /// A policy allowing the system directories a process needs to start, plus
     /// `allowed`, but deliberately not `forbidden`.
+    ///
+    /// The system half comes from the library rather than a list written here.
+    /// A hand-written `/usr`, `/lib`, `/bin`, `/etc` is a Linux inventory, and
+    /// on macOS it omits the dyld shared cache under `/System`: `cat` then dies
+    /// before `main`, the two "granted access works" tests fail, and — worse —
+    /// the "denied access is refused" tests keep passing for the wrong reason,
+    /// because a process that never starts also exits non-zero.
     fn confining_policy(allowed: &std::path::Path) -> Policy {
-        Policy::builder()
-            .label("test-confinement")
-            .read("/usr")
-            .read("/lib")
-            .read("/lib64")
-            .read("/bin")
-            .read("/etc")
-            .exec("/usr/bin")
-            .exec("/bin")
-            .read(allowed.to_path_buf())
-            .build()
+        let mut builder = Policy::builder().label("test-confinement");
+        for dir in nebula_sandbox::system_read_directories() {
+            builder = builder.read(dir);
+        }
+        builder.exec("/usr/bin").exec("/bin").read(allowed.to_path_buf()).build()
     }
 
     #[tokio::test]
