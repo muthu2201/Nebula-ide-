@@ -162,24 +162,32 @@ impl Policy {
         // absolute, so `validate` rejects the whole policy and nothing runs at
         // all. That is exactly how the Windows stress run failed every program
         // before starting one, with "policy paths must be absolute, got /usr".
-        for dir in system_read_directories() {
-            builder = builder.read(dir);
-        }
-
-        // Execution is granted for every directory on `PATH`, rather than a
-        // fixed list of standard ones. A hardcoded list is a guess about where
-        // toolchains live, and it is only ever right about the platform it was
-        // written on: on macOS `rustc` is in `~/.cargo/bin` and `python3` and
-        // `go` come from a version manager's directory, none of which appear in
-        // any list of "standard" binary directories.
+        // Execution is granted everywhere reading is, rather than for a fixed
+        // list of binary directories or even for `PATH` alone. A program on
+        // `PATH` is routinely a symlink into the installation tree behind it,
+        // and the sandbox judges the path the symlink resolves to. Granting
+        // `PATH` and not the tree leaves the launch refused, which is what
+        // happened to `rustc` on macOS — `~/.cargo/bin/rustc` resolves through
+        // Homebrew, and the kernel named the resolved path when it said no:
+        //
+        //     Sandbox: sandbox-exec(40485) deny(1) process-exec*
+        //       /opt/homebrew/Cellar/rustup/1.29.0/bin/rustup-init
+        //
+        // `/opt/homebrew/bin` was granted. `/opt/homebrew/Cellar` was not, and
+        // that is where the binary really lives. Chasing each symlink to its
+        // target is the same guess in another form — it would have to be redone
+        // for every version manager — so exec follows read instead.
         //
         // This is deliberate rather than a weakening. What contains a build
         // tool is that it cannot write outside the project and its caches, and
         // cannot reach the network. Which binaries it may *start* is not the
         // control doing the work — a build compiles and runs new code by
-        // definition, so exec breadth was never the boundary.
-        for dir in path_directories() {
-            builder = builder.exec(dir);
+        // definition, so exec breadth was never the boundary. Note that this
+        // widens `project_tool` only: `read` on a `Policy` still does not imply
+        // `exec`, so a caller granting read of a data directory grants nothing
+        // more than that.
+        for dir in system_read_directories() {
+            builder = builder.read(&dir).exec(dir);
         }
 
         if let Some(home) = dirs_home() {
@@ -407,6 +415,22 @@ mod tests {
                 policy.exec_paths.iter().any(|granted| dir.starts_with(granted)),
                 "{tool} lives in {} which the policy never grants exec on",
                 dir.display()
+            );
+
+            // And where the name on `PATH` is a symlink, the tree it resolves
+            // into as well: the sandbox judges the resolved path, so granting
+            // the link's directory alone still leaves the launch refused.
+            // `~/.cargo/bin/rustc` resolving through Homebrew's Cellar is how
+            // the macOS stress run lost rustc while `/opt/homebrew/bin` was
+            // granted.
+            let Ok(resolved) = binary.canonicalize() else {
+                continue;
+            };
+            let target = resolved.parent().unwrap();
+            assert!(
+                policy.exec_paths.iter().any(|granted| target.starts_with(granted)),
+                "{tool} on PATH resolves to {}, which the policy never grants exec on",
+                resolved.display()
             );
         }
     }

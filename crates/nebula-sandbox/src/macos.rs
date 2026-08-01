@@ -97,6 +97,24 @@ pub fn build_profile(policy: &Policy) -> Result<String> {
     profile.push_str("(allow ipc-posix-shm*)\n");
     profile.push_str("(allow signal (target self))\n");
 
+    // The root directory, and only the root directory. Every dynamically
+    // linked program on macOS reads it before `main`, and under
+    // `(deny default)` it is refused — which is what killed every confined
+    // process on the platform, whatever else the profile granted:
+    //
+    //     Sandbox: sh(48272) deny(1) file-read-data /
+    //     Sandbox: cc(40489) deny(1) file-read-data /
+    //
+    // Two rounds of widening the *system* read paths could not have fixed
+    // this and did not, because the path being refused was never one of them.
+    //
+    // `(literal "/")` and `(subpath "/")` are very different rules and only
+    // the first is safe: `literal` matches the root node itself and nothing
+    // whatsoever beneath it, so this grants the ability to read the root
+    // directory's own entry and grants no access to a single file on the
+    // machine. `subpath` there would grant the entire disk.
+    profile.push_str("(allow file-read* (literal \"/\"))\n");
+
     // Mapping a file's pages as executable is a *separate* Seatbelt operation
     // from reading it, and dyld does both: it opens the shared cache and the
     // linked dylibs, then maps them executable before `main` runs. A profile
@@ -323,6 +341,23 @@ mod tests {
         assert!(
             profile.contains("(allow file-read* (subpath \"/Users/x\"))"),
             "the short spelling of a data-volume path was not granted:\n{profile}"
+        );
+    }
+
+    #[test]
+    fn the_root_directory_is_readable_as_a_literal_and_never_as_a_subpath() {
+        // `file-read-data /` was refused to every confined process on macOS,
+        // and nothing started for as long as that was true. The rule that
+        // fixes it has to be `literal`: `(subpath "/")` reads identically at a
+        // glance and grants the whole disk.
+        let profile = build_profile(&Policy::deny_all()).unwrap();
+        assert!(
+            profile.contains("(allow file-read* (literal \"/\"))"),
+            "the root directory is not readable, so no program can start:\n{profile}"
+        );
+        assert!(
+            !profile.contains("(subpath \"/\")"),
+            "the root was granted as a subpath, which grants the entire disk:\n{profile}"
         );
     }
 
