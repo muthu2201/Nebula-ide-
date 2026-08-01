@@ -485,9 +485,24 @@ fn run_program(
         }
     }
 
+    // A binary the build just produced sits in `root`, and naming it relatively
+    // does not survive Windows: a bare name is looked up on `PATH`, and a
+    // relative path is resolved against *this* process's working directory
+    // rather than the child's, so `current_dir(root)` never applies to it. Unix
+    // works by accident of `execve` resolving `./name` after the chdir. Made
+    // absolute here, and only when the file is really there, so a program name
+    // meant for `PATH` — `python3`, `node`, `sh` — is left alone.
+    let mut argv = program.run.clone();
+    if let Some(first) = argv.first_mut() {
+        let local = root.join(first.trim_start_matches("./").trim_start_matches(".\\"));
+        if local.is_file() {
+            *first = local.display().to_string();
+        }
+    }
+
     let started = Instant::now();
-    let output = nebula_exec::Command::new(&program.run[0])
-        .args(&program.run[1..])
+    let output = nebula_exec::Command::new(&argv[0])
+        .args(&argv[1..])
         .current_dir(root)
         .sandbox(policy)
         .limits(nebula_exec::ResourceLimits::long_running())
