@@ -140,7 +140,7 @@ wit-component = "0.246"
 # --- platform sandboxing ---
 landlock = "0.4"
 seccompiler = "0.5"
-nix = { version = "0.30", features = ["process", "signal", "resource", "user", "fs"] }
+nix = { version = "0.31", features = ["process", "signal", "resource", "user", "fs"] }
 libc = "0.2"
 windows-sys = "0.61"
 
