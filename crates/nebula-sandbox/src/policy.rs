@@ -631,7 +631,11 @@ mod tests {
         // contributes one.
         for dir in path_directories() {
             let Some(parent) = dir.parent() else { continue };
-            if home.starts_with(parent) {
+            // Skipped for the same two reasons the rule itself skips them. A
+            // `PATH` entry directly under a drive root — ordinary on Windows,
+            // where the work happens on `D:` — has a filesystem root for a
+            // parent, and the rule excludes those outright.
+            if parent.parent().is_none() || home.starts_with(parent) {
                 continue;
             }
             assert!(
@@ -710,9 +714,21 @@ mod tests {
         policy.validate().unwrap();
 
         assert!(policy.allows_write(dir.path()), "the project must be writable");
-        assert!(policy.allows_read(Path::new("/usr")), "the toolchain must be readable");
-        assert!(!policy.allows_write(Path::new("/usr")), "the toolchain must not be writable");
-        assert!(!policy.allows_write(Path::new("/etc")), "system config must not be writable");
+
+        // The platform's own system root, not a Unix literal. `/usr` is
+        // `#[cfg(unix)]` on the read list and could never be on the Windows
+        // one, so asserting it readable there was asserting something the
+        // policy is right to refuse. It went unseen because `nebula-exec`
+        // always failed first and `cargo test` stops at the first failing
+        // target.
+        #[cfg(windows)]
+        let system =
+            PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into()));
+        #[cfg(not(windows))]
+        let system = PathBuf::from("/usr");
+
+        assert!(policy.allows_read(&system), "{} must be readable", system.display());
+        assert!(!policy.allows_write(&system), "{} must not be writable", system.display());
         assert_eq!(policy.network, NetworkAccess::Denied);
 
         // A build produces a binary and then runs it. Granting write without

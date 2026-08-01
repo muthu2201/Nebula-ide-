@@ -125,6 +125,23 @@ jobs:
         # could all have been read off a single run.
         run: cargo test --workspace --all-features --no-fail-fast
 
+      - name: Repeat the failures where the log can reach them
+        if: failure()
+        shell: bash
+        run: |
+          # The log API returns the *end* of a job and caps by size, so a
+          # failure in a crate that runs early is unreachable however much tail
+          # is requested. `nebula-sandbox` failed three runs in a row with its
+          # message thirty crates from the end, and all three were spent
+          # inferring what it said.
+          #
+          # The test binaries are already built, so re-running costs seconds,
+          # and the panics land where they can be read.
+          cargo test --workspace --all-features --no-fail-fast 2>&1 \
+            | grep -E -A 12 '^---- |^failures:|panicked at' \
+            | tail -300 \
+            || echo "the re-run reported no failures — the first run was flaky"
+
       - name: Show what Seatbelt refused
         if: always() && matrix.os == 'macos-15'
         run: |
