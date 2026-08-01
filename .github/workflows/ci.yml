@@ -104,14 +104,18 @@ jobs:
 
       - name: Run the test suite
         env:
-          # Every macOS and Windows failure so far has been fully described by
-          # its panic message and made unreadable by the ~28 tokio frames
-          # printed underneath it — the panic scrolls out of the log and the
-          # cause has to be guessed. The backtrace earns its place on Linux,
-          # where a failure can be reproduced and stepped through; on the two
-          # platforms nobody here has a machine for, the message is the whole
-          # of the evidence and it needs to be visible.
-          RUST_BACKTRACE: ${{ startsWith(matrix.os, 'ubuntu') && '1' || '0' }}
+          # Every failure so far has been fully described by its panic message
+          # and made unreadable by the ~29 tokio frames printed underneath it.
+          #
+          # This was macOS and Windows only, on the reasoning that a Linux
+          # failure can be reproduced and stepped through locally. Then an
+          # intermittent one arrived on `ubuntu-24.04-arm` — no arm machine
+          # here, and not reproducible on demand anywhere — and its message,
+          # which prints the captured output that the assertion was about, was
+          # buried exactly the same way. The premise was wrong: what makes a
+          # backtrace affordable is being able to re-run the failure, not the
+          # operating system.
+          RUST_BACKTRACE: 0
         run: cargo test --workspace --all-features
 
       - name: Show what Seatbelt refused
