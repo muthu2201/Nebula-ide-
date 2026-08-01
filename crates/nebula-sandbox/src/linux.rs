@@ -90,6 +90,7 @@ pub fn apply(policy: &Policy) -> Result<Enforcement> {
             // Network was confined but the filesystem was not.
             return Ok(Enforcement::Partial {
                 mechanism: "seccomp-bpf".to_string(),
+                filesystem_scoped: false,
                 missing: vec![format!("filesystem scoping: {reason}")],
             });
         }
@@ -103,11 +104,15 @@ pub fn apply(policy: &Policy) -> Result<Enforcement> {
         RulesetStatus::FullyEnforced if missing.is_empty() => {
             Ok(Enforcement::Full { mechanism: format!("{mechanism} + seccomp-bpf") })
         }
-        RulesetStatus::FullyEnforced => Ok(Enforcement::Partial { mechanism, missing }),
+        RulesetStatus::FullyEnforced => {
+            Ok(Enforcement::Partial { mechanism, filesystem_scoped: true, missing })
+        }
         RulesetStatus::PartiallyEnforced => {
             missing
                 .push("some filesystem access rights (kernel ABI is older than requested)".into());
-            Ok(Enforcement::Partial { mechanism, missing })
+            // Partially enforced means some access *rights* were dropped, not
+            // that paths went unscoped; the granted paths still bound it.
+            Ok(Enforcement::Partial { mechanism, filesystem_scoped: true, missing })
         }
         RulesetStatus::NotEnforced => Ok(Enforcement::Unsupported {
             reason: "the kernel accepted the ruleset but enforced nothing".to_string(),
@@ -166,6 +171,18 @@ fn apply_landlock(policy: &Policy, abi: ABI) -> Result<RulesetStatus> {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, AccessFs::Execute | AccessFs::ReadFile))
             .map_err(|e| SandboxError::ApplyFailed(format!("add exec rule: {e}")))?;
+    }
+
+    // See `ALWAYS_ALLOWED_DEVICES`: denying these breaks toolchains without
+    // withholding anything worth withholding.
+    for device in crate::ALWAYS_ALLOWED_DEVICES {
+        let Ok(fd) = PathFd::new(device) else {
+            tracing::debug!(device, "this system has no such device node");
+            continue;
+        };
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(fd, write_access))
+            .map_err(|e| SandboxError::ApplyFailed(format!("add device rule for {device}: {e}")))?;
     }
 
     let status = ruleset

@@ -81,6 +81,15 @@ pub fn build_profile(policy: &Policy) -> Result<String> {
     profile.push_str("(allow mach-lookup)\n");
     profile.push_str("(allow file-read-metadata)\n");
 
+    // See `ALWAYS_ALLOWED_DEVICES`: denying these breaks toolchains without
+    // withholding anything worth withholding.
+    for device in crate::ALWAYS_ALLOWED_DEVICES {
+        profile.push_str(&format!(
+            "(allow file-read* file-write* (literal {}))\n",
+            quote_scheme(device)
+        ));
+    }
+
     for path in &policy.read_paths {
         let resolved = crate::resolve(path)?;
         profile.push_str(&format!(
@@ -138,6 +147,19 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn the_standard_devices_are_always_permitted() {
+        // A deny-all policy still has to let a compiler open /dev/null.
+        let profile = build_profile(&Policy::deny_all()).unwrap();
+        for device in crate::ALWAYS_ALLOWED_DEVICES {
+            assert!(
+                profile.contains(&format!("(literal \"{device}\")")),
+                "{device} is missing from a deny-all profile:\n{profile}"
+            );
+        }
+        assert!(!profile.contains("/dev/tty"), "the terminal is not a build dependency");
+    }
 
     #[test]
     fn profiles_deny_by_default() {

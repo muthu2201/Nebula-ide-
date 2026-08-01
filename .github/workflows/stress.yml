@@ -128,6 +128,22 @@ jobs:
           path: stress-results/
           retention-days: 30
 
+      # Last, so that on a failure the reason is in the final lines of the job
+      # log. The step summary above is easier to read in a browser, but the log
+      # is what tooling can fetch, and a failure nobody can read is a failure
+      # nobody can fix.
+      - name: Echo the report
+        if: failure()
+        shell: bash
+        run: |
+          report="stress-results/${{ matrix.os }}-${{ matrix.renderer }}.md"
+          if [ -f "$report" ]; then
+            echo "=== $report ==="
+            cat "$report"
+          else
+            echo "The run produced no report — it failed before finishing."
+          fi
+
   benchmarks:
     name: benchmarks
     runs-on: ubuntu-24.04

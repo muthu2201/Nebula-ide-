@@ -42,6 +42,19 @@ pub struct Policy {
     pub label: String,
 }
 
+/// Character devices every sandbox permits, whatever the policy says.
+///
+/// Denying `/dev/null` does not make a sandbox stronger — reads give EOF and
+/// writes are discarded, so there is nothing to leak and nothing to persist —
+/// but it does break almost every toolchain that exists. `go build` opens
+/// `/dev/null` to obtain a build ID and fails outright without it; linkers,
+/// shells and test harnesses do the same.
+///
+/// `/dev/tty` is deliberately *not* here. It is a real capability — a handle on
+/// the user's terminal — and no build tool needs it to succeed.
+pub const ALWAYS_ALLOWED_DEVICES: &[&str] =
+    &["/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom"];
+
 impl Policy {
     /// Start building a deny-everything policy.
     pub fn builder() -> PolicyBuilder {

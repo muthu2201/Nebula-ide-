@@ -901,6 +901,9 @@ mod tests {
     fn probing_enforcement_does_not_require_running_anything() {
         let dir = TempDir::new().unwrap();
         let enforcement = probe_enforcement(&Policy::read_only(dir.path())).unwrap();
-        assert_eq!(enforcement.is_confined(), nebula_sandbox::is_available());
+        // `confines_filesystem`, not `is_confined`: the latter is true whenever
+        // seccomp installed a network filter, even on a kernel where Landlock
+        // is missing and every file on the machine stays readable.
+        assert_eq!(enforcement.confines_filesystem(), nebula_sandbox::is_available());
     }
 }

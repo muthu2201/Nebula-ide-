@@ -52,7 +52,7 @@ pub mod macos;
 #[cfg(windows)]
 pub mod windows;
 
-pub use policy::{NetworkAccess, Policy, PolicyBuilder};
+pub use policy::{ALWAYS_ALLOWED_DEVICES, NetworkAccess, Policy, PolicyBuilder};
 
 /// What confinement was actually achieved.
 ///
@@ -69,6 +69,13 @@ pub enum Enforcement {
     Partial {
         /// The mechanism that applied.
         mechanism: String,
+        /// Whether the filesystem is scoped to the policy's paths.
+        ///
+        /// This is a field rather than something inferred from `missing`
+        /// because it is the question callers actually need answered before
+        /// running untrusted code, and an answer parsed out of prose would
+        /// drift from the truth the first time someone reworded a message.
+        filesystem_scoped: bool,
         /// What could not be enforced, for the audit log and the UI.
         missing: Vec<String>,
     },
@@ -85,16 +92,35 @@ impl Enforcement {
         matches!(self, Enforcement::Full { .. })
     }
 
-    /// Whether any confinement at all is in force.
+    /// Whether *any* confinement at all is in force.
+    ///
+    /// Deliberately weak, and rarely the question worth asking: seccomp alone
+    /// makes this true while leaving the entire filesystem readable. Before
+    /// running untrusted code, ask [`confines_filesystem`] instead.
+    ///
+    /// [`confines_filesystem`]: Enforcement::confines_filesystem
     pub fn is_confined(&self) -> bool {
         !matches!(self, Enforcement::Unsupported { .. })
+    }
+
+    /// Whether the filesystem is scoped to the paths the policy granted.
+    ///
+    /// This is the question that matters before handing control to a tool that
+    /// might read anything: on a kernel without Landlock, network denial can
+    /// succeed while every file on the machine stays readable.
+    pub fn confines_filesystem(&self) -> bool {
+        match self {
+            Enforcement::Full { .. } => true,
+            Enforcement::Partial { filesystem_scoped, .. } => *filesystem_scoped,
+            Enforcement::Unsupported { .. } => false,
+        }
     }
 
     /// A one-line summary for the audit log.
     pub fn summary(&self) -> String {
         match self {
             Enforcement::Full { mechanism } => format!("confined via {mechanism}"),
-            Enforcement::Partial { mechanism, missing } => {
+            Enforcement::Partial { mechanism, missing, .. } => {
                 format!("partially confined via {mechanism}; not enforced: {}", missing.join(", "))
             }
             Enforcement::Unsupported { reason } => format!("UNCONFINED: {reason}"),
@@ -227,14 +253,34 @@ mod tests {
         assert!(full.is_full());
         assert!(full.is_confined());
 
-        let partial =
-            Enforcement::Partial { mechanism: "Landlock".into(), missing: vec!["network".into()] };
+        let partial = Enforcement::Partial {
+            mechanism: "Landlock".into(),
+            filesystem_scoped: true,
+            missing: vec!["network".into()],
+        };
         assert!(!partial.is_full());
         assert!(partial.is_confined());
 
         let none = Enforcement::Unsupported { reason: "old kernel".into() };
         assert!(!none.is_full());
         assert!(!none.is_confined(), "unsupported must never read as confined");
+        assert!(!none.confines_filesystem());
+        assert!(partial.confines_filesystem());
+        assert!(full.confines_filesystem());
+
+        // The case this distinction exists for: seccomp blocked the network,
+        // Landlock was unavailable, and every file on the machine is readable.
+        // `is_confined` says yes; the question that matters says no.
+        let network_only = Enforcement::Partial {
+            mechanism: "seccomp-bpf".into(),
+            filesystem_scoped: false,
+            missing: vec!["filesystem scoping".into()],
+        };
+        assert!(network_only.is_confined());
+        assert!(
+            !network_only.confines_filesystem(),
+            "an unscoped filesystem must read as unscoped"
+        );
     }
 
     #[test]

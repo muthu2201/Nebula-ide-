@@ -41,7 +41,12 @@ pub fn apply(policy: &Policy) -> Result<Enforcement> {
         missing.push("network denial (requires a Windows Filtering Platform rule)".to_string());
     }
 
-    Ok(Enforcement::Partial { mechanism: "Windows Job Object".to_string(), missing })
+    Ok(Enforcement::Partial {
+        mechanism: "Windows Job Object".to_string(),
+        // A Job Object caps memory and processes; it scopes no paths at all.
+        filesystem_scoped: false,
+        missing,
+    })
 }
 
 /// Default memory ceiling for a sandboxed tool: 2 GiB.
