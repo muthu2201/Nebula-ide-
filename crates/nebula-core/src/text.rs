@@ -36,6 +36,8 @@ impl TextBuffer {
     /// the detected ending is stored and re-applied on [`TextBuffer::to_bytes`].
     /// Keeping the rope pure-LF is what lets column arithmetic stay simple —
     /// there is no invisible `\r` to skip over in the middle of a line.
+    // FromStr is fallible; building a buffer from a `&str` cannot fail.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(text: &str) -> Self {
         let line_ending = LineEnding::detect(text);
         let normalized = if line_ending == LineEnding::Lf && !text.contains('\r') {

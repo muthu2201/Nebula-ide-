@@ -58,11 +58,11 @@ fn bench_incremental_keystroke(c: &mut Criterion) {
                     let offset = before.len_chars() / 2;
                     let transaction = Transaction::single(Edit::insert(offset, "x"));
                     let mut after = before.clone();
-                    let result = transaction.apply(&mut after).unwrap();
-                    (tree, before, after, transaction, result)
+                    transaction.apply(&mut after).unwrap();
+                    (tree, before, after, transaction)
                 },
-                |(mut tree, before, after, transaction, result)| {
-                    tree.apply(&before, &after, &transaction, &result, 1).unwrap();
+                |(mut tree, before, after, transaction)| {
+                    tree.apply(&before, &after, &transaction, 1).unwrap();
                     black_box(tree.version())
                 },
                 criterion::BatchSize::SmallInput,

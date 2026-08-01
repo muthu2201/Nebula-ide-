@@ -10,7 +10,14 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    # `ttf-parser` is unmaintained with no safe upgrade. It reaches us only
+    # transitively — through cosmic-text/fontdb for shaping, and through
+    # winit/sctk-adwaita for window decorations — so there is nothing here to
+    # migrate. It is a parsing crate with no known vulnerability; the advisory
+    # is a maintenance notice. Revisit when cosmic-text moves to `skrifa`.
+    "RUSTSEC-2026-0192",
+]
 
 [licenses]
 version = 2
@@ -22,6 +29,9 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "BSL-1.0",
+    # Mozilla's CA certificate data, as shipped by webpki-root-certs. A
+    # permissive data licence, not a code licence.
+    "CDLA-Permissive-2.0",
     "CC0-1.0",
     "ISC",
     "MIT",
@@ -33,11 +43,10 @@ allow = [
 ]
 confidence-threshold = 0.9
 
-[[licenses.exceptions]]
-# The bundled font. Bitstream Vera's licence is permissive and allows
-# redistribution; it is simply not an SPDX identifier cargo-deny knows.
-name = "nebula-render"
-allow = ["MIT"]
+# Nebula's own crates carry `LicenseRef-Nebula-Proprietary`, which is not an
+# SPDX identifier and never will be. They are all `publish = false`, so this
+# skips them rather than requiring a fictitious licence in the allow list.
+private = { ignore = true }
 
 [bans]
 multiple-versions = "warn"

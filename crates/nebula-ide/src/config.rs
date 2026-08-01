@@ -10,21 +10,16 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// Which built-in theme, or one from disk.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeChoice {
     /// The built-in dark theme.
+    #[default]
     Dark,
     /// The built-in light theme.
     Light,
     /// A theme file, relative to the config directory or absolute.
     File(PathBuf),
-}
-
-impl Default for ThemeChoice {
-    fn default() -> Self {
-        ThemeChoice::Dark
-    }
 }
 
 /// The editor's settings.
@@ -258,8 +253,7 @@ mod tests {
 
     #[test]
     fn an_unknown_model_is_rejected() {
-        let mut config = Config::default();
-        config.model = "gpt-imaginary".to_string();
+        let config = Config { model: "gpt-imaginary".to_string(), ..Config::default() };
         assert!(config.validate().unwrap_err().contains("gpt-imaginary"));
     }
 
@@ -274,9 +268,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("nested/config.json");
 
-        let mut config = Config::default();
-        config.font_size = 18.0;
-        config.theme = ThemeChoice::Light;
+        let config = Config { font_size: 18.0, theme: ThemeChoice::Light, ..Config::default() };
         config.save_to(&path).unwrap();
 
         let (loaded, warning) = Config::load_from(&path);
@@ -286,8 +278,7 @@ mod tests {
 
     #[test]
     fn the_built_in_themes_resolve_without_touching_the_disk() {
-        let mut config = Config::default();
-        config.theme = ThemeChoice::Light;
+        let config = Config { theme: ThemeChoice::Light, ..Config::default() };
         let (theme, warning) = config.resolve_theme();
         assert!(warning.is_none());
         assert!(!theme.dark);
@@ -299,8 +290,7 @@ mod tests {
         let path = dir.path().join("broken.json");
         std::fs::write(&path, "{}").unwrap();
 
-        let mut config = Config::default();
-        config.theme = ThemeChoice::File(path);
+        let config = Config { theme: ThemeChoice::File(path), ..Config::default() };
         let (theme, warning) = config.resolve_theme();
         assert!(theme.dark, "the fallback is the built-in dark theme");
         assert!(warning.unwrap().contains("could not be loaded"));
@@ -312,8 +302,7 @@ mod tests {
         let path = dir.path().join("custom.json");
         std::fs::write(&path, nebula_ui::Theme::light().to_json()).unwrap();
 
-        let mut config = Config::default();
-        config.theme = ThemeChoice::File(path);
+        let config = Config { theme: ThemeChoice::File(path), ..Config::default() };
         let (theme, warning) = config.resolve_theme();
         assert!(warning.is_none());
         assert_eq!(theme.name, "Nebula Light");

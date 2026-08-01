@@ -15,6 +15,11 @@ real pixels.
 * **Native rendering.** wgpu on the GPU, tiny-skia on the CPU when there is no
   GPU to be had. Not a degraded fallback — the same scene, rasterised
   differently. Everything renders either way.
+
+  > **Not yet complete:** the window rasterises every frame but does not yet
+  > blit it to the screen. The headless paths (`run`, `render`, `doctor`) are
+  > complete and tested; the GUI's final present step is not. See
+  > [Honest limits](docs/ARCHITECTURE.md#honest-limits).
 * **Bring your own key.** Requests go directly from your machine to the model
   provider. No Nebula proxy is on the path. Keys live in the OS keychain.
 * **Three rings of sandboxing.** A WASM capability sandbox, OS-level confinement

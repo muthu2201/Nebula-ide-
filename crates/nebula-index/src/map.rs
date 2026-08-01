@@ -210,7 +210,7 @@ fn render_file(file: &RankedFile) -> String {
         if last_line.is_some_and(|last| symbol.line > last + 1) {
             out.push_str("⋮\n");
         }
-        out.push_str("│");
+        out.push('│');
         out.push_str(&format!("{} {}\n", symbol.kind.name(), symbol.name));
         last_line = Some(symbol.line);
     }
@@ -287,7 +287,7 @@ mod tests {
         let focused = build(&RepoMapOptions::default().focus("src/lonely.rs"));
 
         let rank_of = |map: &RepoMap, path: &str| {
-            map.files.iter().position(|f| f.path == PathBuf::from(path)).unwrap()
+            map.files.iter().position(|f| f.path == Path::new(path)).unwrap()
         };
         assert!(
             rank_of(&focused, "src/lonely.rs") < rank_of(&unfocused, "src/lonely.rs"),
@@ -299,7 +299,7 @@ mod tests {
     fn excluded_files_are_omitted() {
         let map = build(&RepoMapOptions::default().exclude("src/core.rs"));
         assert!(
-            !map.files.iter().any(|f| f.path == PathBuf::from("src/core.rs")),
+            !map.files.iter().any(|f| f.path == Path::new("src/core.rs")),
             "an excluded file leaked into the map"
         );
     }

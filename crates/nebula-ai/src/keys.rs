@@ -146,19 +146,14 @@ impl fmt::Display for ApiKey {
 /// The backend is an enum rather than a trait object so that tests can use an
 /// in-memory store without the production path becoming dynamically dispatched
 /// or, worse, without a test-only branch existing inside the real store.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum KeyStore {
     /// The OS keychain. What ships.
+    #[default]
     OsKeychain,
     /// An in-memory store, for tests and for headless CI where no keychain
     /// daemon is running.
     Memory(std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>),
-}
-
-impl Default for KeyStore {
-    fn default() -> Self {
-        KeyStore::OsKeychain
-    }
 }
 
 impl KeyStore {

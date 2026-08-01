@@ -62,7 +62,7 @@ impl Encoding {
                 CoreError::Decode(format!("invalid UTF-8 at byte {}", e.utf8_error().valid_up_to()))
             }),
             Encoding::Utf16Le | Encoding::Utf16Be => {
-                if body.len() % 2 != 0 {
+                if !body.len().is_multiple_of(2) {
                     return Err(CoreError::Decode(
                         "UTF-16 content has an odd number of bytes".into(),
                     ));

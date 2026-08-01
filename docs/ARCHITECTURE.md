@@ -400,6 +400,15 @@ See [the stress report](../stress-results/REPORT.md) for the full run, and
 
 Stated plainly, because a design document that only lists strengths is marketing.
 
+* **The window does not yet present what it draws.** `nebula-ide::window`
+  translates events, drives the editor and rasterises a frame for every redraw —
+  all of that is tested — but the finished pixels are not blitted to the window
+  surface. Presenting needs a configured wgpu surface (or a software blit) that
+  the shell does not create yet. Every headless entry point (`run`, `render`,
+  `doctor`) is complete; the GUI is the one thing that is not, and it is not
+  complete because there is no display server in the environment this was built
+  in and shipping untested windowing code that claims to work would be worse
+  than saying so.
 * **The GPU path is untested on real hardware in this repository's CI.** Linux
   runners use lavapipe, which is a software Vulkan implementation. It exercises
   the wgpu code path but tells you nothing about a real driver.

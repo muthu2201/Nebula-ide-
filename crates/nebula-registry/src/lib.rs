@@ -15,7 +15,7 @@
 //!
 //! 1. the package's signature must verify against a **registered publisher key**
 //!    — not merely against the key inside the package, which anyone can mint;
-//! 2. [`nebula_pkg::notarize`] must not reject it, which among other things
+//! 2. [`nebula_pkg::notarize()`] must not reject it, which among other things
 //!    means the binary cannot import capabilities its manifest hides;
 //! 3. anything requesting a capability that reaches outside the editor is held
 //!    for human review rather than published automatically.

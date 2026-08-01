@@ -24,7 +24,9 @@ pub mod delta;
 pub mod manifest;
 
 pub use delta::{Patch, apply_patch, make_patch};
-pub use manifest::{Channel, Platform, Release, ReleaseManifest, UpdateSigner};
+pub use manifest::{
+    Channel, Platform, Release, ReleaseManifest, Update, UpdateSigner, VerifiedUpdate,
+};
 
 use base64::Engine as _;
 use ed25519_dalek::{Verifier, VerifyingKey};

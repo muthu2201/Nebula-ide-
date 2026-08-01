@@ -38,6 +38,14 @@ struct Cli {
     #[arg(long)]
     require_all_toolchains: bool,
 
+    /// Record the timings without failing the run when one misses its budget.
+    ///
+    /// Correctness is still gated. This is for shared machines — a CI runner
+    /// measures the queue as much as the editor, so its numbers are worth
+    /// recording without being worth failing on.
+    #[arg(long)]
+    record_timings_only: bool,
+
     /// Write the JSON report here.
     #[arg(long, default_value = "stress-results/report.json")]
     json: PathBuf,
@@ -76,10 +84,18 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         force_cpu: cli.cpu,
         skip_programs: cli.skip_programs,
         require_all_toolchains: cli.require_all_toolchains,
+        enforce_budgets: !cli.record_timings_only,
     };
 
     println!("{}", style("Nebula end-to-end stress run").bold());
     println!();
+    if cli.record_timings_only {
+        println!(
+            "  {}",
+            style("timings recorded, not enforced; correctness still gates this run").yellow()
+        );
+        println!();
+    }
     for (tool, present) in harness::available_toolchains() {
         println!(
             "  {:<8} {}",

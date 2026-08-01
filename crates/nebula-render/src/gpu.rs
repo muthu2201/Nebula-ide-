@@ -13,9 +13,12 @@
 //!
 //! [`GpuRenderer::new`] renders to a texture, not to a window. That is what the
 //! stress harness and CI use, and it means the GPU path is exercised on any
-//! machine with a driver — including software rasterisers like llvmpipe — rather
-//! than only on a developer's desktop. Attaching to a real window is
-//! [`GpuRenderer::for_surface`].
+//! machine with a driver — including software rasterisers like llvmpipe —
+//! rather than only on a developer's desktop.
+//!
+//! Presenting to a real window surface is not implemented here: `nebula-ide`
+//! draws through this same off-screen path and the shell blits the result. See
+//! `docs/ARCHITECTURE.md` for what that means today.
 
 use std::borrow::Cow;
 
@@ -585,6 +588,10 @@ impl Renderer for GpuRenderer {
             height: self.surface.height,
             pixels: pixmap.data().to_vec(),
         })
+    }
+
+    fn is_hardware_accelerated(&self) -> bool {
+        self.adapter_info.device_type != wgpu::DeviceType::Cpu
     }
 
     fn describe(&self) -> String {

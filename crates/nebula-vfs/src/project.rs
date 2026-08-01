@@ -237,7 +237,7 @@ fn is_always_ignored(entry: &DirEntry) -> bool {
         return false;
     };
     let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
-    is_dir && ALWAYS_IGNORED_DIRS.iter().any(|d| *d == name)
+    is_dir && ALWAYS_IGNORED_DIRS.contains(&name)
 }
 
 #[cfg(test)]

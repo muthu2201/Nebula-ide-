@@ -57,10 +57,14 @@ impl Fixture {
         std::fs::create_dir_all(root)
             .with_context(|| format!("could not create {}", root.display()))?;
 
-        let mut files = Vec::new();
-
-        // --- Rust -----------------------------------------------------------
-        files.push(("Cargo.toml", CARGO_TOML.to_string()));
+        // The order is the order they are written, and the comments say which
+        // language each group belongs to.
+        #[rustfmt::skip]
+        let mut files = vec![
+            // --- Rust ---
+            ("Cargo.toml", CARGO_TOML.to_string()),
+        ];
+        files.push(("src/main.rs", RUST_MAIN.to_string()));
         files.push(("src/main.rs", RUST_MAIN.to_string()));
         files.push(("src/geometry.rs", RUST_GEOMETRY.to_string()));
         files.push(("src/stats.rs", RUST_STATS.to_string()));

@@ -109,9 +109,9 @@ impl From<Range> for Selection {
 /// A non-empty, sorted, non-overlapping set of selections.
 ///
 /// The invariants are maintained by construction: every constructor and mutator
-/// funnels through [`SelectionSet::normalize`], which sorts by start offset and
-/// merges any selections that touch. Nothing above this type ever has to defend
-/// against two cursors landing on the same character.
+/// funnels through one private normalisation step, which sorts by start offset
+/// and merges any selections that touch. Nothing above this type ever has to
+/// defend against two cursors landing on the same character.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionSet {
     /// Invariant: non-empty, sorted by `start()`, pairwise non-touching.
@@ -143,6 +143,8 @@ impl SelectionSet {
     /// An empty iterator yields a single caret at offset 0 — the type never
     /// represents "no cursors", because an editor with no cursor has no
     /// meaningful response to a keystroke.
+    // FromIterator is implemented too; this is the inherent form, kept because it reads better at call sites.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_iter(iter: impl IntoIterator<Item = Selection>) -> Self {
         let mut selections: SmallVec<[Selection; 2]> = iter.into_iter().collect();
         if selections.is_empty() {
@@ -290,6 +292,12 @@ impl SelectionSet {
         if self.primary >= self.selections.len() {
             self.primary = self.selections.len() - 1;
         }
+    }
+}
+
+impl FromIterator<Selection> for SelectionSet {
+    fn from_iter<I: IntoIterator<Item = Selection>>(iter: I) -> Self {
+        SelectionSet::from_iter(iter)
     }
 }
 

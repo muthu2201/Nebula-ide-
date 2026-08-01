@@ -138,6 +138,16 @@ impl ApplicationHandler for Shell {
             }
 
             WindowEvent::RedrawRequested => {
+                // NOT YET COMPLETE: this rasterises the frame but does not put
+                // it on the screen. `App::frame` renders off-screen and returns
+                // the pixels; presenting them needs a configured wgpu surface
+                // (or a software blit) that this shell does not create yet.
+                //
+                // Everything above this line — event translation, the keymap,
+                // editing, scrolling, resize — is done and tested. This one
+                // step is not, and it is not tested because there is no display
+                // server in the environment this was built in. See
+                // `docs/ARCHITECTURE.md`, "Honest limits".
                 let scale = self.window.as_ref().map(|w| w.scale_factor()).unwrap_or(1.0);
                 if let Err(error) = self.app.frame(scale as f32) {
                     tracing::error!(%error, "the frame could not be drawn");

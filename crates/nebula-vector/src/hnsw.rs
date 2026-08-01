@@ -423,15 +423,12 @@ impl Hnsw {
 
     /// Serialise the index to bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .map_err(|e| VectorError::Serialization(e.to_string()))
+        postcard::to_stdvec(self).map_err(|e| VectorError::Serialization(e.to_string()))
     }
 
     /// Restore an index from bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let (index, _) = bincode::serde::decode_from_slice(bytes, bincode::config::standard())
-            .map_err(|e| VectorError::Serialization(e.to_string()))?;
-        Ok(index)
+        postcard::from_bytes(bytes).map_err(|e| VectorError::Serialization(e.to_string()))
     }
 
     /// Write the index to a file.

@@ -45,6 +45,12 @@ pub struct Options {
     pub skip_programs: bool,
     /// Fail if a toolchain a program needs is missing, rather than skipping it.
     pub require_all_toolchains: bool,
+    /// Whether a missed timing budget fails the run.
+    ///
+    /// Correctness is always gated. Timings are not always meaningful: a shared
+    /// CI runner measures the queue as much as the editor, so there the numbers
+    /// are worth recording without being worth failing on.
+    pub enforce_budgets: bool,
 }
 
 impl Default for Options {
@@ -57,6 +63,7 @@ impl Default for Options {
             force_cpu: false,
             skip_programs: false,
             require_all_toolchains: false,
+            enforce_budgets: true,
         }
     }
 }
@@ -86,11 +93,16 @@ impl Default for Budgets {
 }
 
 impl Budgets {
-    /// The frame budget for whichever renderer is in use.
-    pub fn frame(&self, kind: nebula_render::RendererKind) -> Duration {
-        match kind {
-            nebula_render::RendererKind::Gpu => self.keystroke_to_photon_gpu,
-            nebula_render::RendererKind::Cpu => self.keystroke_to_photon_cpu,
+    /// The frame budget for the renderer that is actually drawing.
+    ///
+    /// A GPU adapter that is itself a software rasteriser — lavapipe on a CI
+    /// runner, llvmpipe in a VM — is held to the software budget. Holding it to
+    /// the hardware one would measure the emulator.
+    pub fn frame(&self, hardware_accelerated: bool) -> Duration {
+        if hardware_accelerated {
+            self.keystroke_to_photon_gpu
+        } else {
+            self.keystroke_to_photon_cpu
         }
     }
 }
@@ -103,33 +115,57 @@ pub fn run(options: &Options) -> Result<Report> {
     let fixture = Fixture::generate(&options.workdir, options.generated_lines)
         .context("could not write the fixture project")?;
 
-    let mut config = Config::default();
-    config.force_cpu_renderer = options.force_cpu;
+    let config = Config { force_cpu_renderer: options.force_cpu, ..Config::default() };
 
     let mut report = Report::new(&fixture, budgets);
 
     let (mut app, cold) = cold_start(&config, options)?;
     report.renderer = app.renderer_kind().name().to_string();
     report.renderer_reason = app.renderer_reason().to_string();
+    report.hardware_accelerated = app.is_hardware_accelerated();
+    report.budgets_enforced = options.enforce_budgets;
     report.phases.push(cold);
 
-    report.phases.push(editing(&mut app, &fixture, options, budgets)?);
-    report.phases.push(large_file(&mut app, &fixture, options, budgets)?);
-    report.phases.push(indexing(&fixture)?);
+    report.phases.push(recover("editing", editing(&mut app, &fixture, options, budgets)));
+    report.phases.push(recover("large-file", large_file(&mut app, &fixture, options, budgets)));
+    report.phases.push(recover("indexing", indexing(&fixture)));
 
     if options.skip_programs {
         report.phases.push(PhaseReport::skipped("programs", "--skip-programs was given"));
     } else {
-        let (phase, runs) = programs(&fixture, options)?;
-        report.programs = runs;
-        report.phases.push(phase);
+        match programs(&fixture, options) {
+            Ok((phase, runs)) => {
+                report.programs = runs;
+                report.phases.push(phase);
+            }
+            Err(error) => report.phases.push(failed_phase("programs", &error)),
+        }
     }
 
-    report.phases.push(durability(&mut app, &fixture)?);
+    report.phases.push(recover("durability", durability(&mut app, &fixture)));
 
     report.elapsed = started.elapsed();
     report.finish();
     Ok(report)
+}
+
+/// Turn a phase that returned an error into a phase that reports it.
+///
+/// The alternative — propagating — loses every measurement taken before the
+/// failure and writes no report at all, which is the opposite of what a harness
+/// is for.
+fn recover(name: &str, result: Result<PhaseReport>) -> PhaseReport {
+    match result {
+        Ok(phase) => phase,
+        Err(error) => failed_phase(name, &error),
+    }
+}
+
+fn failed_phase(name: &str, error: &anyhow::Error) -> PhaseReport {
+    let mut phase = PhaseReport::new(name);
+    phase.fail(format!("{error:#}"));
+    phase.finish(Duration::ZERO);
+    phase
 }
 
 /// Phase 1: how long it takes to have something on screen.
@@ -208,7 +244,7 @@ fn editing(
     let undo = undo_start.elapsed();
 
     let elapsed = started.elapsed();
-    let budget = budgets.frame(app.renderer_kind());
+    let budget = budgets.frame(app.is_hardware_accelerated());
 
     phase.note(format!("{typed} keystrokes, each followed by a full frame"));
     phase.measure("keystroke-to-photon-p50", percentile(&latencies, 0.50), Some(budget));
@@ -272,7 +308,7 @@ fn large_file(
     }
 
     let elapsed = started.elapsed();
-    let budget = budgets.frame(app.renderer_kind());
+    let budget = budgets.frame(app.is_hardware_accelerated());
 
     phase.measure("open", open, None);
     phase.measure("first-frame", first, None);
@@ -614,6 +650,7 @@ mod tests {
             force_cpu: true,
             skip_programs: true,
             require_all_toolchains: false,
+            enforce_budgets: true,
         }
     }
 
@@ -817,14 +854,8 @@ mod tests {
     #[test]
     fn the_budgets_come_from_the_renderer_not_from_here() {
         let budgets = Budgets::default();
-        assert_eq!(
-            budgets.frame(nebula_render::RendererKind::Gpu),
-            nebula_render::budget::KEYSTROKE_TO_PHOTON_GPU
-        );
-        assert_eq!(
-            budgets.frame(nebula_render::RendererKind::Cpu),
-            nebula_render::budget::KEYSTROKE_TO_PHOTON_CPU
-        );
+        assert_eq!(budgets.frame(true), nebula_render::budget::KEYSTROKE_TO_PHOTON_GPU);
+        assert_eq!(budgets.frame(false), nebula_render::budget::KEYSTROKE_TO_PHOTON_CPU);
     }
 
     #[test]

@@ -1,0 +1,12 @@
+# `cargo audit` configuration.
+#
+# The one ignore here mirrors deny.toml, and for the same reason: a maintenance
+# notice against a crate we reach only transitively and cannot migrate.
+
+[advisories]
+ignore = [
+    # `ttf-parser` is unmaintained. It reaches us through cosmic-text/fontdb
+    # and winit/sctk-adwaita; there is no direct dependency to change, and no
+    # known vulnerability. Revisit when cosmic-text moves to `skrifa`.
+    "RUSTSEC-2026-0192",
+]

@@ -657,8 +657,7 @@ mod tests {
 
     #[test]
     fn syntax_highlighting_colours_keywords_differently_from_strings() {
-        let mut registry = GrammarRegistry::new();
-        let grammar = registry.get("rust").unwrap();
+        let grammar = GrammarRegistry::new().get("rust").unwrap();
         let document = Document::from_str(r#"fn main() { let s = "text"; }"#);
         let tree = SyntaxTree::parse(grammar, document.buffer(), document.version()).unwrap();
 
@@ -683,8 +682,7 @@ mod tests {
 
     #[test]
     fn comments_are_italic() {
-        let mut registry = GrammarRegistry::new();
-        let grammar = registry.get("rust").unwrap();
+        let grammar = GrammarRegistry::new().get("rust").unwrap();
         let document = Document::from_str("// a note\nfn main() {}");
         let tree = SyntaxTree::parse(grammar, document.buffer(), document.version()).unwrap();
 

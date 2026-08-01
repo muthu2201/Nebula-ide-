@@ -452,8 +452,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn app() -> App {
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         App::new(config, 800, 600).unwrap()
     }
 

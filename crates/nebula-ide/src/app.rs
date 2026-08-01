@@ -142,6 +142,14 @@ impl App {
         self.backend.kind()
     }
 
+    /// Whether frames are drawn by real graphics hardware.
+    ///
+    /// False on the CPU backend and on a GPU adapter that is itself a software
+    /// rasteriser, which is what a CI runner or a VM usually offers.
+    pub fn is_hardware_accelerated(&self) -> bool {
+        self.backend.is_hardware_accelerated()
+    }
+
     /// Why that renderer was chosen — including, on a fallback, what failed.
     pub fn renderer_reason(&self) -> &str {
         self.backend.selection_reason()
@@ -343,10 +351,9 @@ mod tests {
     use tempfile::TempDir;
 
     fn app() -> App {
-        let mut config = Config::default();
         // Every test here asserts on behaviour, not on GPU output, and the CPU
         // path is the one that is guaranteed to exist on every machine.
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         App::new(config, 800, 600).unwrap()
     }
 

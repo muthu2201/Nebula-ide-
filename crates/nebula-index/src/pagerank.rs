@@ -98,12 +98,12 @@ impl PageRank {
             // what keeps the vector summing to 1.
             let mut dangling = 0.0f64;
 
-            for node in 0..n {
+            for (node, &mass) in rank.iter().enumerate() {
                 if self.out_weight[node] <= 0.0 {
-                    dangling += rank[node];
+                    dangling += mass;
                     continue;
                 }
-                let share = rank[node] / self.out_weight[node];
+                let share = mass / self.out_weight[node];
                 for &(to, weight) in &self.edges[node] {
                     next[to] += share * weight;
                 }

@@ -17,7 +17,7 @@
 //! ## Why the manifest is not trusted
 //!
 //! The manifest *declares* capabilities, and the notarisation scanner
-//! ([`notarize`]) reads the component's **actual imports** and compares. A
+//! ([`notarize()`]) reads the component's **actual imports** and compares. A
 //! package whose binary imports more than its manifest admits is rejected, so
 //! the manifest a user is shown at install time is the truth rather than a
 //! claim.

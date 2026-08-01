@@ -496,8 +496,7 @@ mod tests {
         let source = dir.path().join("main.rs");
         std::fs::write(&source, "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
 
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
 
         let out = dir.path().join("shot.png");
         render(config, &source, &out, "320x240", None).unwrap();
@@ -524,8 +523,7 @@ mod tests {
         let source = dir.path().join("a.rs");
         std::fs::write(&source, "fn main() {}").unwrap();
 
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         let mut app = App::new(config, 200, 100).unwrap();
         app.open(&source).unwrap();
 
@@ -543,8 +541,7 @@ mod tests {
         std::fs::write(&script, "open main.rs\nend\ntype // trailing\nsave\nexpect-saved\nframe\n")
             .unwrap();
 
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         run_script(config, &script, dir.path(), None, None).unwrap();
 
         let written = std::fs::read_to_string(dir.path().join("main.rs")).unwrap();
@@ -558,8 +555,7 @@ mod tests {
         let script = dir.path().join("s.nbs");
         std::fs::write(&script, "open a.txt\nframe\n").unwrap();
 
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         // A zero-millisecond budget is one no real frame can meet, which is
         // exactly what makes it a test of the check rather than of the machine.
         let error = run_script(config, &script, dir.path(), None, Some(0)).unwrap_err();
@@ -573,8 +569,7 @@ mod tests {
         let script = dir.path().join("s.nbs");
         std::fs::write(&script, "open a.txt\ntype yz\nframe\n").unwrap();
 
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         let report = dir.path().join("out/report.json");
         run_script(config, &script, dir.path(), Some(&report), None).unwrap();
 
@@ -586,8 +581,7 @@ mod tests {
 
     #[test]
     fn doctor_reports_without_failing_on_a_machine_with_no_gpu() {
-        let mut config = Config::default();
-        config.force_cpu_renderer = true;
+        let config = Config { force_cpu_renderer: true, ..Config::default() };
         doctor(config).unwrap();
     }
 

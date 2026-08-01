@@ -193,15 +193,12 @@ impl SymbolGraph {
 
     /// Serialise the graph, for caching between sessions.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .map_err(|e| crate::IndexError::Serialization(e.to_string()))
+        postcard::to_stdvec(self).map_err(|e| crate::IndexError::Serialization(e.to_string()))
     }
 
     /// Restore a cached graph.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let (graph, _) = bincode::serde::decode_from_slice(bytes, bincode::config::standard())
-            .map_err(|e| crate::IndexError::Serialization(e.to_string()))?;
-        Ok(graph)
+        postcard::from_bytes(bytes).map_err(|e| crate::IndexError::Serialization(e.to_string()))
     }
 }
 

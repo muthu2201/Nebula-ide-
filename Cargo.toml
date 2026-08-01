@@ -9,7 +9,7 @@ exclude = ["extensions"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.94"
 license = "LicenseRef-Nebula-Proprietary"
 authors = ["Nebula IDE"]
 repository = "https://github.com/muthu2201/Nebula-ide-"
@@ -59,7 +59,10 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 toml = "0.9"
 serde_yaml_ng = "0.10"
-bincode = { version = "2.0", features = ["serde"] }
+# postcard rather than bincode: bincode is unmaintained (RUSTSEC-2025-0141)
+# with no safe upgrade, and postcard is the maintained successor the advisory
+# names. The format is only ever read back by the version that wrote it.
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
 
 # --- error handling / logging ---
 thiserror = "2.0"

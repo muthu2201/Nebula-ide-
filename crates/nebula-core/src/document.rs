@@ -40,7 +40,7 @@ impl std::fmt::Display for DocumentId {
 }
 
 /// Everything about a document that is not its text or cursors.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DocumentMeta {
     /// Where the document lives on disk, if anywhere.
     pub path: Option<PathBuf>,
@@ -50,12 +50,6 @@ pub struct DocumentMeta {
     /// Whether the file is writable. Read-only documents reject transactions
     /// rather than letting the user type into something that cannot be saved.
     pub read_only: bool,
-}
-
-impl Default for DocumentMeta {
-    fn default() -> Self {
-        Self { path: None, language: None, read_only: false }
-    }
 }
 
 /// A document: text buffer, cursors, undo history, and a monotonic version.
@@ -89,6 +83,8 @@ impl Document {
     }
 
     /// A document holding `text`, not backed by any file.
+    // FromStr is fallible; building a document from a `&str` cannot fail.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(text: &str) -> Self {
         Self { buffer: TextBuffer::from_str(text), ..Self::new() }
     }

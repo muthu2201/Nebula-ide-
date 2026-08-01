@@ -1,5 +1,5 @@
 //! Helpers over `ropey` that several crates need but that do not belong on
-//! [`TextBuffer`] itself.
+//! [`crate::TextBuffer`] itself.
 
 use ropey::Rope;
 

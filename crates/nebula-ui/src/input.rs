@@ -417,13 +417,11 @@ pub fn apply(
         }
 
         Action::DeleteWordBackward => {
-            outcome.edited =
-                delete_to(document, |buffer, offset| word::prev_word_boundary(buffer, offset))?;
+            outcome.edited = delete_to(document, word::prev_word_boundary)?;
         }
 
         Action::DeleteWordForward => {
-            outcome.edited =
-                delete_to(document, |buffer, offset| word::next_word_boundary(buffer, offset))?;
+            outcome.edited = delete_to(document, word::next_word_boundary)?;
         }
 
         Action::DeleteToLineEnd => {

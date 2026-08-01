@@ -311,8 +311,7 @@ mod tests {
 
     #[test]
     fn table_growth_is_capped_too() {
-        let mut caps = ResourceCaps::default();
-        caps.max_table_elements = 100;
+        let caps = ResourceCaps { max_table_elements: 100, ..ResourceCaps::default() };
         let mut limits = StoreLimits::new(caps);
 
         assert!(limits.memory_growing(0, 1024, None).unwrap());

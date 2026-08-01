@@ -119,6 +119,17 @@ pub trait Renderer: Send {
 
     /// A description of the backend, for the status bar and bug reports.
     fn describe(&self) -> String;
+
+    /// Whether frames are drawn by real graphics hardware.
+    ///
+    /// False for the CPU backend, and *also* false for a GPU adapter that is
+    /// itself a software rasteriser — lavapipe, llvmpipe and SwiftShader all
+    /// report themselves as CPU devices. Those are common on CI runners and in
+    /// virtual machines, and holding one to the hardware frame budget measures
+    /// the emulator rather than the editor.
+    fn is_hardware_accelerated(&self) -> bool {
+        false
+    }
 }
 
 /// Chooses a backend.
@@ -169,6 +180,14 @@ impl Backend {
     /// The renderer.
     pub fn renderer(&mut self) -> &mut dyn Renderer {
         self.renderer.as_mut()
+    }
+
+    /// Whether frames are drawn by real graphics hardware.
+    ///
+    /// False for the CPU backend, and also false for a GPU adapter that is
+    /// itself a software rasteriser. See [`Renderer::is_hardware_accelerated`].
+    pub fn is_hardware_accelerated(&self) -> bool {
+        self.renderer.is_hardware_accelerated()
     }
 
     /// Which implementation is in use.

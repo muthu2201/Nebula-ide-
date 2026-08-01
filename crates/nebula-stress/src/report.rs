@@ -189,6 +189,12 @@ pub struct Report {
     pub renderer: String,
     /// Why that renderer was chosen.
     pub renderer_reason: String,
+    /// Whether frames were drawn by real graphics hardware.
+    #[serde(default)]
+    pub hardware_accelerated: bool,
+    /// Whether a missed timing budget failed the run.
+    #[serde(default = "yes")]
+    pub budgets_enforced: bool,
     /// The machine.
     pub environment: Timings,
     /// The budgets the run was held to.
@@ -204,6 +210,10 @@ pub struct Report {
     pub elapsed: Duration,
     /// Whether everything held.
     pub passed: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// The budgets, in a serialisable shape.
@@ -238,6 +248,8 @@ impl Report {
             version: env!("CARGO_PKG_VERSION").to_string(),
             renderer: "unknown".to_string(),
             renderer_reason: String::new(),
+            hardware_accelerated: false,
+            budgets_enforced: true,
             environment: crate::harness::environment(),
             budgets: BudgetReport {
                 keystroke_to_photon_gpu_ms: millis_of(budgets.keystroke_to_photon_gpu),
@@ -274,8 +286,21 @@ impl Report {
 
     /// Everything that went wrong, in words.
     pub fn failures(&self) -> Vec<String> {
-        let mut failures: Vec<String> =
-            self.phases.iter().filter(|p| !p.skipped).flat_map(PhaseReport::problems).collect();
+        let mut failures: Vec<String> = self
+            .phases
+            .iter()
+            .filter(|p| !p.skipped)
+            .flat_map(|phase| {
+                if self.budgets_enforced {
+                    phase.problems()
+                } else {
+                    // Correctness always counts. Timings on a shared runner
+                    // measure the queue as much as the editor, so there they
+                    // are recorded rather than gated on.
+                    phase.failures.clone()
+                }
+            })
+            .collect();
 
         for program in &self.programs {
             if !program.skipped && !program.passed {
@@ -318,6 +343,19 @@ impl Report {
             self.fixture.files, self.fixture.lines, self.fixture.programs
         ));
         out.push_str(&format!("Total time: {:.2?}\n\n", self.elapsed));
+
+        if !self.budgets_enforced {
+            out.push_str(
+                "Timing budgets were **recorded, not enforced** on this run. \
+                 Correctness still gates it.\n\n",
+            );
+        }
+        if !self.hardware_accelerated {
+            out.push_str(
+                "No hardware acceleration: frames were drawn in software, so the \
+                 16 ms budget applies rather than the 8 ms one.\n\n",
+            );
+        }
 
         if !self.passed {
             out.push_str("## Failures\n\n");
@@ -648,6 +686,8 @@ mod tests {
             version: "0.1.0".to_string(),
             renderer: "cpu".to_string(),
             renderer_reason: "forced".to_string(),
+            hardware_accelerated: false,
+            budgets_enforced: true,
             environment: crate::harness::environment(),
             budgets: BudgetReport {
                 keystroke_to_photon_gpu_ms: 8.0,

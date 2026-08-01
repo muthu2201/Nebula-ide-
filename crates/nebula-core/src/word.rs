@@ -96,13 +96,13 @@ pub fn word_at(buffer: &TextBuffer, offset: usize) -> crate::position::Range {
 
     // Prefer the character before the cursor: with the caret at `foo|`, the word
     // being typed is `foo`, not whatever follows.
-    let class = if offset > 0 && CharClass::of(rope.char(offset - 1)) == CharClass::Word {
-        CharClass::Word
-    } else if offset < len && CharClass::of(rope.char(offset)) == CharClass::Word {
-        CharClass::Word
-    } else {
+    let before_is_word = offset > 0 && CharClass::of(rope.char(offset - 1)) == CharClass::Word;
+    let after_is_word = offset < len && CharClass::of(rope.char(offset)) == CharClass::Word;
+
+    if !before_is_word && !after_is_word {
         return crate::position::Range::empty(offset);
-    };
+    }
+    let class = CharClass::Word;
 
     let mut start = offset;
     while start > 0 && CharClass::of(rope.char(start - 1)) == class {

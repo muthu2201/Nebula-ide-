@@ -91,6 +91,11 @@ jobs:
         # A stress run against a debug build measures the debug build.
         run: cargo build --release -p nebula-stress
 
+      # `--record-timings-only` gates correctness but not the clock. A shared
+      # GitHub runner measures the queue as much as the editor, and lavapipe is
+      # a software Vulkan implementation being asked to behave like a GPU. The
+      # committed report in `stress-results/` is the reference measurement,
+      # taken on a quiet machine; these runs exist to catch things breaking.
       - name: Run the stress test
         shell: bash
         run: |
@@ -100,6 +105,7 @@ jobs:
             --keystrokes "${{ inputs.keystrokes || '5000' }}" \
             --generated-lines "${{ inputs.generated_lines || '200000' }}" \
             --require-all-toolchains \
+            --record-timings-only \
             --json "stress-results/${{ matrix.os }}-${{ matrix.renderer }}.json" \
             --markdown "stress-results/${{ matrix.os }}-${{ matrix.renderer }}.md"
 
