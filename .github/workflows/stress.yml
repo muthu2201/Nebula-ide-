@@ -120,9 +120,18 @@ jobs:
         shell: bash
         run: |
           log show --last 20m --style compact \
-            --predicate 'eventMessage CONTAINS "Sandbox" OR eventMessage CONTAINS "deny("' \
-            2>/dev/null | head -200 \
+            --predicate 'eventMessage CONTAINS "deny("' \
+            >"${RUNNER_TEMP}/denials.txt" 2>/dev/null \
             || echo "the unified log is unavailable on this runner"
+          echo "denials logged in the window: $(wc -l <"${RUNNER_TEMP}/denials.txt" || echo 0)"
+
+          # Filtered to the six toolchains the fixture runs. Unfiltered, the
+          # window is dominated by system daemons losing arguments with their
+          # own profiles at boot, and the first N lines of it are all theirs.
+          echo "--- refused to a process this job started ---"
+          grep -Ei 'Sandbox: (sh|bash|dash|cat|env|python3?|node|go|cc|clang|ld|rustc|cargo|sandbox-exec|nebula[a-z-]*)\(' \
+            "${RUNNER_TEMP}/denials.txt" | tail -100 \
+            || echo "none: the kernel refused nothing to any process this job started"
 
       - name: Add the report to the job summary
         if: always()
