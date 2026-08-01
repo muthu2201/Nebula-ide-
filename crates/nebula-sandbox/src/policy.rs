@@ -56,6 +56,7 @@ pub struct Policy {
 /// fixed.
 pub fn system_read_directories() -> Vec<PathBuf> {
     let mut dirs = path_directories();
+    dirs.extend(toolchain_roots());
 
     #[cfg(unix)]
     dirs.extend(["/usr", "/lib", "/lib64", "/bin", "/etc", "/opt"].map(PathBuf::from));
@@ -89,6 +90,19 @@ pub fn system_read_directories() -> Vec<PathBuf> {
             "/System/Cryptexes",
             "/System/Volumes/Preboot/Cryptexes",
             "/Library",
+            // The C toolchain on macOS is inside Xcode, and Xcode is an
+            // application bundle. `/usr/bin/cc` is a stub that asks `xcrun` for
+            // the real compiler, and `xcrun` loads its own library from
+            // `/Applications/Xcode_*.app/Contents/Developer`:
+            //
+            //     xcrun: error: unable to load libxcrun
+            //     (…/libxcrun.dylib (file system sandbox blocked open()))
+            //
+            // — which failed the C fixture outright and the Rust one at the
+            // link step, since rustc shells out to `cc`. `/Applications` holds
+            // installed software, in the same sense as `/usr` and `/opt`
+            // above; it is not where anyone's documents are.
+            "/Applications",
             // `/etc` and `/var` are symlinks into `/private`, and Seatbelt
             // evaluates the path they resolve to.
             "/private/etc",
@@ -108,6 +122,39 @@ pub fn system_read_directories() -> Vec<PathBuf> {
     }
 
     dirs
+}
+
+/// The installation directory of each toolchain reachable through `PATH`.
+///
+/// A toolchain reads its own installation, and that installation is the
+/// directory its `bin` sits in — `GOROOT/bin/go` needs `GOROOT/src`,
+/// `…/Python.framework/Versions/3.14/bin/python3` needs the `lib` beside it.
+/// Granting the `bin` alone leaves a compiler unable to find its own standard
+/// library, which is what Go said when it had one:
+///
+/// ```text
+/// cmd/report/main.go:5:2: package fmt is not in std
+///   (/Users/runner/hostedtoolcache/go/1.25.12/arm64/src/fmt)
+/// ```
+///
+/// One level up, and never past the home directory. `/Users/alice/bin` is a
+/// perfectly ordinary `PATH` entry and its parent is everything the user owns,
+/// so any candidate that contains — or is — the home directory is dropped. That
+/// exclusion is the whole reason this is a rule rather than a convenience:
+/// without it the same line would quietly grant read of the entire home
+/// directory on most machines.
+fn toolchain_roots() -> Vec<PathBuf> {
+    let home = dirs_home();
+    path_directories()
+        .into_iter()
+        .filter_map(|dir| dir.parent().map(Path::to_path_buf))
+        .filter(|root| match &home {
+            // `home.starts_with(root)` is true for the home directory itself,
+            // for `/Users`, and for `/` — the three that must never be granted.
+            Some(home) => !home.starts_with(root),
+            None => root.parent().is_some(),
+        })
+        .collect()
 }
 
 /// Whether a granted directory contains `resolved`, an already-resolved path.
@@ -500,6 +547,40 @@ mod tests {
         let policy = Policy::builder().write(dir.path()).build();
         assert!(policy.allows_write(&dir.path().join("src/main.rs")));
         assert!(!policy.allows_write(Path::new("/etc/passwd")));
+    }
+
+    #[test]
+    fn a_toolchain_root_is_granted_but_never_the_home_directory() {
+        // The rule earns its keep by what it refuses. `~/bin` on `PATH` is
+        // ordinary, and one level up from it is everything the user owns.
+        let roots = toolchain_roots();
+        let Some(home) = dirs_home() else {
+            return; // No home to reason about on this machine.
+        };
+        for root in &roots {
+            assert!(
+                !home.starts_with(root),
+                "`{}` was granted, which contains the home directory `{}`",
+                root.display(),
+                home.display()
+            );
+        }
+
+        // And the toolchain trees it exists for are present: every `PATH`
+        // entry deep enough to have a parent outside the home directory
+        // contributes one.
+        for dir in path_directories() {
+            let Some(parent) = dir.parent() else { continue };
+            if home.starts_with(parent) {
+                continue;
+            }
+            assert!(
+                roots.iter().any(|root| root == parent),
+                "{} is on PATH but its installation root {} was not granted",
+                dir.display(),
+                parent.display()
+            );
+        }
     }
 
     #[cfg(unix)]
