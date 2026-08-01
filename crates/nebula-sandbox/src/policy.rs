@@ -148,11 +148,17 @@ fn toolchain_roots() -> Vec<PathBuf> {
     path_directories()
         .into_iter()
         .filter_map(|dir| dir.parent().map(Path::to_path_buf))
+        // A filesystem root is never an installation. `C:\tools\bin` on Windows
+        // has `C:\` for a parent, and the home-directory guard below does not
+        // catch it — that guard only knows about the drive the home directory
+        // is on, so a `PATH` entry one level under any *other* drive root would
+        // have granted that entire drive.
+        .filter(|root| root.parent().is_some())
         .filter(|root| match &home {
             // `home.starts_with(root)` is true for the home directory itself,
             // for `/Users`, and for `/` — the three that must never be granted.
             Some(home) => !home.starts_with(root),
-            None => root.parent().is_some(),
+            None => true,
         })
         .collect()
 }
@@ -546,9 +552,15 @@ mod tests {
             let Ok(resolved) = binary.canonicalize() else {
                 continue;
             };
+            // Through `covers`, not `starts_with`. `canonicalize` on Windows
+            // returns an extended-length path — `\\?\C:\…` — which never
+            // `starts_with` the `C:\…` the policy holds, so the raw comparison
+            // failed there for every tool on `PATH` while being correct
+            // everywhere else. `covers` resolves the grant too, which is the
+            // same reason it exists for `allows_read`.
             let target = resolved.parent().unwrap();
             assert!(
-                policy.exec_paths.iter().any(|granted| target.starts_with(granted)),
+                policy.exec_paths.iter().any(|granted| covers(granted, target)),
                 "{tool} on PATH resolves to {}, which the policy never grants exec on",
                 resolved.display()
             );

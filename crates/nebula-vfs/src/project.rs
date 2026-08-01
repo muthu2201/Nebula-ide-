@@ -242,6 +242,28 @@ fn is_always_ignored(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Every walked path, joined with `/` on every platform.
+    ///
+    /// The stored path is a real one and rightly uses native separators, so
+    /// `display` gives `src\\main.rs` on Windows while every assertion here is
+    /// written with `/`, as a repository path conventionally is. Comparing
+    /// through `display` made those assertions fail for a reason that says
+    /// nothing about the walk.
+    fn relative_paths(project: &Project) -> Vec<String> {
+        project
+            .files()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                e.relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            })
+            .collect()
+    }
+
     use super::*;
     use std::fs;
     use tempfile::TempDir;
@@ -270,8 +292,7 @@ mod tests {
     fn walk_skips_build_output_and_dependency_dirs() {
         let dir = fixture();
         let project = Project::open(dir.path()).unwrap();
-        let files: Vec<String> =
-            project.files().unwrap().iter().map(|e| e.relative.display().to_string()).collect();
+        let files: Vec<String> = relative_paths(&project);
 
         assert!(files.contains(&"src/main.rs".to_string()));
         assert!(files.contains(&"Cargo.toml".to_string()));
@@ -286,8 +307,7 @@ mod tests {
     fn walk_honours_gitignore() {
         let dir = fixture();
         let project = Project::open(dir.path()).unwrap();
-        let files: Vec<String> =
-            project.files().unwrap().iter().map(|e| e.relative.display().to_string()).collect();
+        let files: Vec<String> = relative_paths(&project);
         assert!(
             !files.iter().any(|f| f.starts_with("generated")),
             "gitignored paths must be skipped: {files:?}"
@@ -346,8 +366,7 @@ mod tests {
         fs::write(dir.path().join("src/big.rs"), vec![b'x'; 4096]).unwrap();
         let opts = WalkOptions { max_file_size: Some(1024), ..Default::default() };
         let project = Project::open_with(dir.path(), opts).unwrap();
-        let files: Vec<String> =
-            project.files().unwrap().iter().map(|e| e.relative.display().to_string()).collect();
+        let files: Vec<String> = relative_paths(&project);
         assert!(!files.contains(&"src/big.rs".to_string()));
     }
 
