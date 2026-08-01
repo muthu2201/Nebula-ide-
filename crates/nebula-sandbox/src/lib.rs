@@ -52,7 +52,9 @@ pub mod macos;
 #[cfg(windows)]
 pub mod windows;
 
-pub use policy::{ALWAYS_ALLOWED_DEVICES, NetworkAccess, Policy, PolicyBuilder};
+pub use policy::{
+    ALWAYS_ALLOWED_DEVICES, NetworkAccess, Policy, PolicyBuilder, system_read_directories,
+};
 
 /// What confinement was actually achieved.
 ///

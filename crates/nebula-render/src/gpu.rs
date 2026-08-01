@@ -160,10 +160,16 @@ fn instance_descriptor() -> wgpu::InstanceDescriptor {
 
 /// The texture format frames are drawn in.
 ///
-/// Rgba8Unorm rather than sRGB: the scene's colours are converted to linear on
-/// the CPU by [`crate::scene::Color::to_linear`], so the hardware must not
-/// convert them a second time.
-const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+/// sRGB, and the two halves of that are easy to conflate. Colours are converted
+/// to linear on the CPU by [`crate::scene::Color::to_linear`] so that blending
+/// happens in linear space, which is the correct thing to do. But the frame
+/// then has to be *encoded back* to sRGB on the way into the texture, because
+/// that is the space [`Framebuffer`] bytes are in and what the CPU backend
+/// produces. `Rgba8Unorm` performs no encoding, so the linear values landed in
+/// the buffer raw: a `rgb(20, 40, 60)` background read back as `(2, 5, 11)` and
+/// every pixel of a frame disagreed with the CPU backend. `Rgba8UnormSrgb`
+/// encodes on write, which is the missing half.
+const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 impl GpuRenderer {
     /// Create a headless renderer drawing into a texture.

@@ -102,7 +102,75 @@ jobs:
             echo "no Vulkan device; the GPU tests will skip"
           fi
 
-      - run: cargo test --workspace --all-features
+      - name: Run the test suite
+        env:
+          # Every failure so far has been fully described by its panic message
+          # and made unreadable by the ~29 tokio frames printed underneath it.
+          #
+          # This was macOS and Windows only, on the reasoning that a Linux
+          # failure can be reproduced and stepped through locally. Then an
+          # intermittent one arrived on `ubuntu-24.04-arm` — no arm machine
+          # here, and not reproducible on demand anywhere — and its message,
+          # which prints the captured output that the assertion was about, was
+          # buried exactly the same way. The premise was wrong: what makes a
+          # backtrace affordable is being able to re-run the failure, not the
+          # operating system.
+          RUST_BACKTRACE: 0
+        # `--no-fail-fast`, because the default hides work. `cargo test` stops
+        # at the first test binary that fails, so a platform with faults in
+        # several crates reports them one per run and each fix reveals the next.
+        # Windows went `nebula-exec` → `nebula-index` → `nebula-lsp` that way,
+        # three round trips of roughly half an hour each, for three unrelated
+        # sets of Unix assumptions that were all present from the start and
+        # could all have been read off a single run.
+        run: cargo test --workspace --all-features --no-fail-fast
+
+      - name: Repeat the failures where the log can reach them
+        if: failure()
+        shell: bash
+        run: |
+          # The log API returns the *end* of a job and caps by size, so a
+          # failure in a crate that runs early is unreachable however much tail
+          # is requested. `nebula-sandbox` failed three runs in a row with its
+          # message thirty crates from the end, and all three were spent
+          # inferring what it said.
+          #
+          # The test binaries are already built, so re-running costs seconds,
+          # and the panics land where they can be read.
+          cargo test --workspace --all-features --no-fail-fast 2>&1 \
+            | grep -E -A 12 '^---- |^failures:|panicked at' \
+            | tail -300 \
+            || echo "no panic blocks matched here; read the test step's own output above"
+
+      - name: Show what Seatbelt refused
+        if: always() && matrix.os == 'macos-15'
+        run: |
+          # A process the sandbox kills dies before `main` and writes nothing
+          # to either stream, so the failure carries no reason. The kernel logs
+          # one — "Sandbox: sh(123) deny(1) file-read-data /path" — to the
+          # unified log and nowhere else.
+          #
+          # This step exists because two separate rounds of reasoning about
+          # which paths dyld needs both looked sound and both changed nothing.
+          # The profile printed by the test failures shows `/usr`,
+          # `/System/Library` and both cryptex paths granted, and `/bin/sh`
+          # still aborts, so the missing rule is not one that can be predicted
+          # from reading the profile. Reading it beats guessing at it a third
+          # time.
+          log show --last 20m --style compact \
+            --predicate 'eventMessage CONTAINS "deny("' \
+            >"${RUNNER_TEMP}/denials.txt" 2>/dev/null \
+            || echo "the unified log is unavailable on this runner"
+          echo "denials logged in the window: $(wc -l <"${RUNNER_TEMP}/denials.txt" || echo 0)"
+
+          # Filtered to the processes this job starts. The window is full of
+          # `softwareupdated` and `searchpartyd` losing arguments with their
+          # own profiles at boot, and taking the first N lines of it returns
+          # nothing but that.
+          echo "--- refused to a process this job started ---"
+          grep -Ei 'Sandbox: (sh|bash|dash|cat|env|python3?|node|go|cc|clang|ld|rustc|cargo|sandbox-exec|nebula[a-z-]*)\(' \
+            "${RUNNER_TEMP}/denials.txt" | tail -100 \
+            || echo "none: the kernel refused nothing to any process this job started"
 
       - name: Check that the headless build stands alone
         run: cargo check -p nebula-ide --no-default-features

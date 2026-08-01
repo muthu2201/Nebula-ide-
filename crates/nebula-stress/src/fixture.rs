@@ -234,8 +234,11 @@ fn compiled_binary(stem: &str) -> String {
 
 /// How to invoke a binary sitting in the working directory.
 ///
-/// `./name` is a Unix idiom. Windows resolves a bare relative name against the
-/// current directory already and does not treat `./` as part of a program name.
+/// `./name` is a Unix idiom, and Windows does not treat `./` as part of a
+/// program name. Neither spelling is enough on its own: the harness makes the
+/// path absolute against the fixture root before spawning, because a relative
+/// program is resolved against the parent's working directory on Windows and a
+/// bare name is looked up on `PATH`.
 fn invoke_local(binary: &str) -> String {
     if cfg!(windows) { binary.to_string() } else { format!("./{binary}") }
 }

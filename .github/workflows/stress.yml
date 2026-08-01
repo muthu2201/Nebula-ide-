@@ -145,6 +145,46 @@ jobs:
             echo "The run produced no report — it failed before finishing."
           fi
 
+      # After the report, for the same reason the report is after everything
+      # else: the log API returns the *end* of a job's output, and a job this
+      # long has an end that a fetch can reach and a middle that it cannot.
+      # This step sat before the artifact upload, which put roughly two hundred
+      # lines of upload chatter and the whole report between it and the tail —
+      # so the diagnosis it exists to print could not be read at all.
+      #
+      # The six programs exercise far more of the profile than the unit tests
+      # do — six toolchains, each linking its own libraries — so the kernel's
+      # denial log is richer here than anywhere else, and a sandboxed program
+      # that dies before `main` leaves no other trace.
+      - name: Show what Seatbelt refused
+        if: failure() && matrix.os == 'macos-15'
+        shell: bash
+        run: |
+          log show --last 20m --style compact \
+            --predicate 'eventMessage CONTAINS "deny("' \
+            >"${RUNNER_TEMP}/denials.txt" 2>/dev/null \
+            || echo "the unified log is unavailable on this runner"
+          echo "denials logged in the window: $(wc -l <"${RUNNER_TEMP}/denials.txt" || echo 0)"
+
+          # Filtered to the six toolchains the fixture runs. Unfiltered, the
+          # window is dominated by system daemons losing arguments with their
+          # own profiles at boot, and the first N lines of it are all theirs.
+          # Go is the last fixture still failing, with its own standard
+          # library unreadable at `GOROOT/src`. The policy grants the parent of
+          # every `PATH` entry, which is `GOROOT` when `go` is reached through
+          # `GOROOT/bin` — so it is not, and the question is what it is reached
+          # through instead. `which -a` answers that; guessing has cost three
+          # rounds already.
+          echo "--- where the go toolchain actually is ---"
+          which -a go || echo "go is not on PATH at all"
+          go env GOROOT GOPATH 2>/dev/null || echo "go env unavailable"
+          echo "PATH=$PATH"
+
+          echo "--- refused to a process this job started ---"
+          grep -Ei 'Sandbox: (sh|bash|dash|cat|env|python3?|node|go|cc|clang|ld|rustc|cargo|sandbox-exec|nebula[a-z-]*)\(' \
+            "${RUNNER_TEMP}/denials.txt" | tail -100 \
+            || echo "none: the kernel refused nothing to any process this job started"
+
   benchmarks:
     name: benchmarks
     runs-on: ubuntu-24.04

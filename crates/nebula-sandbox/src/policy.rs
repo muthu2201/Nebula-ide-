@@ -46,20 +46,70 @@ pub struct Policy {
 ///
 /// Every `PATH` directory is included on all platforms — a binary that can be
 /// executed has to be readable — plus the platform's own system roots.
-fn system_read_directories() -> Vec<PathBuf> {
+///
+/// Public because anything that builds a policy a process must actually *start*
+/// under needs exactly this list, and a second hand-written copy of it is a bug
+/// waiting to happen. It has already happened twice: once here, where a Unix
+/// list omitted `/System` and no macOS binary could reach the dyld shared
+/// cache, and once in `nebula-exec`'s test helper, which kept its own copy of
+/// the same Unix list and so failed the same way on macOS after this one was
+/// fixed.
+pub fn system_read_directories() -> Vec<PathBuf> {
     let mut dirs = path_directories();
+    dirs.extend(toolchain_roots());
 
     #[cfg(unix)]
     dirs.extend(["/usr", "/lib", "/lib64", "/bin", "/etc", "/opt"].map(PathBuf::from));
 
     // macOS keeps the dyld shared cache and the system frameworks under
-    // `/System`, and every dynamically linked binary reads them before `main`
-    // runs. Without them nothing starts at all — which is why the macOS stress
-    // run failed all six programs identically, including `/bin/sh`, whose own
-    // directory was granted. `/private` carries the real `/tmp` and `/var`,
-    // which are symlinks into it and so resolve there.
+    // `/System/Library`, and every dynamically linked binary reads them before
+    // `main` runs. Without them nothing starts at all — which is why the macOS
+    // stress run failed all six programs identically, including `/bin/sh`,
+    // whose own directory was granted.
+    //
+    // Granted narrowly, and the narrowness is the point. The obvious spelling
+    // is `/System` and `/private`, and both are far wider than they look:
+    // `/System/Volumes/Data` is the mount point of the entire data volume, so
+    // granting `/System` grants read of every user file on the machine, and
+    // `/private/var/folders` holds every temporary directory, so granting
+    // `/private` grants read of anything any process has put in a temp dir.
+    // Either one quietly turns a deny-by-default policy into one that confines
+    // nothing on macOS, while every "denied access is refused" test keeps
+    // passing — those tests run a process that dies at startup, and a process
+    // that never starts also exits non-zero.
     #[cfg(target_os = "macos")]
-    dirs.extend(["/System", "/Library", "/private"].map(PathBuf::from));
+    dirs.extend(
+        [
+            "/System/Library",
+            // macOS 13 moved the shared cache into a *cryptex*, a separately
+            // sealed image. It is mounted twice: at its backing location under
+            // `/System/Volumes/Preboot`, and at `/System/Cryptexes/OS`, which
+            // is the path dyld actually opens. Naming only the first is how a
+            // profile can list the shared cache and still leave every
+            // dynamically linked program dying on `SIGABRT` before `main`.
+            "/System/Cryptexes",
+            "/System/Volumes/Preboot/Cryptexes",
+            "/Library",
+            // The C toolchain on macOS is inside Xcode, and Xcode is an
+            // application bundle. `/usr/bin/cc` is a stub that asks `xcrun` for
+            // the real compiler, and `xcrun` loads its own library from
+            // `/Applications/Xcode_*.app/Contents/Developer`:
+            //
+            //     xcrun: error: unable to load libxcrun
+            //     (…/libxcrun.dylib (file system sandbox blocked open()))
+            //
+            // — which failed the C fixture outright and the Rust one at the
+            // link step, since rustc shells out to `cc`. `/Applications` holds
+            // installed software, in the same sense as `/usr` and `/opt`
+            // above; it is not where anyone's documents are.
+            "/Applications",
+            // `/etc` and `/var` are symlinks into `/private`, and Seatbelt
+            // evaluates the path they resolve to.
+            "/private/etc",
+            "/private/var/db",
+        ]
+        .map(PathBuf::from),
+    );
 
     #[cfg(windows)]
     for var in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "LOCALAPPDATA"] {
@@ -72,6 +122,73 @@ fn system_read_directories() -> Vec<PathBuf> {
     }
 
     dirs
+}
+
+/// The installation directory of each toolchain reachable through `PATH`.
+///
+/// A toolchain reads its own installation, and that installation is the
+/// directory its `bin` sits in — `GOROOT/bin/go` needs `GOROOT/src`,
+/// `…/Python.framework/Versions/3.14/bin/python3` needs the `lib` beside it.
+/// Granting the `bin` alone leaves a compiler unable to find its own standard
+/// library, which is what Go said when it had one:
+///
+/// ```text
+/// cmd/report/main.go:5:2: package fmt is not in std
+///   (/Users/runner/hostedtoolcache/go/1.25.12/arm64/src/fmt)
+/// ```
+///
+/// One level up, and never past the home directory. `/Users/alice/bin` is a
+/// perfectly ordinary `PATH` entry and its parent is everything the user owns,
+/// so any candidate that contains — or is — the home directory is dropped. That
+/// exclusion is the whole reason this is a rule rather than a convenience:
+/// without it the same line would quietly grant read of the entire home
+/// directory on most machines.
+fn toolchain_roots() -> Vec<PathBuf> {
+    let home = dirs_home();
+    path_directories()
+        .into_iter()
+        .filter_map(|dir| dir.parent().map(Path::to_path_buf))
+        // A filesystem root is never an installation. `C:\tools\bin` on Windows
+        // has `C:\` for a parent, and the home-directory guard below does not
+        // catch it — that guard only knows about the drive the home directory
+        // is on, so a `PATH` entry one level under any *other* drive root would
+        // have granted that entire drive.
+        .filter(|root| root.parent().is_some())
+        .filter(|root| match &home {
+            // `home.starts_with(root)` is true for the home directory itself,
+            // for `/Users`, and for `/` — the three that must never be granted.
+            Some(home) => !home.starts_with(root),
+            None => true,
+        })
+        .collect()
+}
+
+/// Whether a granted directory contains `resolved`, an already-resolved path.
+///
+/// Both sides have to be resolved or the answer is wrong wherever a symlink
+/// stands between the two spellings. `allows_read` resolved only the path being
+/// asked about and compared it against the grant as written, so on macOS —
+/// where the temporary directory is `/var/folders/…`, a symlink to
+/// `/private/var/folders/…` — a policy reported that it did not grant read of
+/// the very directory it had just been handed:
+///
+/// ```text
+/// assertion failed: policy.allows_read(dir.path())
+/// ```
+///
+/// The error is toward refusing, so it was never a hole in the sandbox; it is
+/// a public predicate returning the wrong answer, which is enough. The
+/// unresolved comparison is tried first because it is the common case and
+/// costs no syscall, and because it is the only one that can succeed for a
+/// path that does not exist yet.
+fn covers(granted: &Path, resolved: &Path) -> bool {
+    if resolved.starts_with(granted) {
+        return true;
+    }
+    match std::fs::canonicalize(granted) {
+        Ok(granted) => resolved.starts_with(granted),
+        Err(_) => false,
+    }
 }
 
 /// The directories on `PATH`, in order, skipping empty and relative entries.
@@ -117,8 +234,21 @@ impl Policy {
     /// This is the profile that runs `cargo test` on the user's behalf.
     pub fn project_tool(project_root: impl AsRef<Path>) -> Policy {
         let root = project_root.as_ref().to_path_buf();
-        let mut builder =
-            Policy::builder().label("project-tool").write(&root).network(NetworkAccess::Denied);
+        // Exec on the project, not only write. A build's whole purpose is to
+        // produce a binary and then run it — `cc -o sieve sieve.c && ./sieve`
+        // — and with write alone the second half is refused:
+        //
+        //     sandbox-exec: execvp() of '…/nebula-fixture-sieve' failed
+        //
+        // Nothing is given away by this that write did not already give. A
+        // process that can write an executable into the project and can run
+        // *anything* at all can already run what it wrote, by any of a dozen
+        // routes; refusing this one only breaks compilers.
+        let mut builder = Policy::builder()
+            .label("project-tool")
+            .write(&root)
+            .exec(&root)
+            .network(NetworkAccess::Denied);
 
         // Toolchains read their own installation; denying that makes every
         // build fail. Where "their own installation" *is* differs by platform,
@@ -126,30 +256,62 @@ impl Policy {
         // absolute, so `validate` rejects the whole policy and nothing runs at
         // all. That is exactly how the Windows stress run failed every program
         // before starting one, with "policy paths must be absolute, got /usr".
-        for dir in system_read_directories() {
-            builder = builder.read(dir);
-        }
-
-        // Execution is granted for every directory on `PATH`, rather than a
-        // fixed list of standard ones. A hardcoded list is a guess about where
-        // toolchains live, and it is only ever right about the platform it was
-        // written on: on macOS `rustc` is in `~/.cargo/bin` and `python3` and
-        // `go` come from a version manager's directory, none of which appear in
-        // any list of "standard" binary directories.
+        // Execution is granted everywhere reading is, rather than for a fixed
+        // list of binary directories or even for `PATH` alone. A program on
+        // `PATH` is routinely a symlink into the installation tree behind it,
+        // and the sandbox judges the path the symlink resolves to. Granting
+        // `PATH` and not the tree leaves the launch refused, which is what
+        // happened to `rustc` on macOS — `~/.cargo/bin/rustc` resolves through
+        // Homebrew, and the kernel named the resolved path when it said no:
+        //
+        //     Sandbox: sandbox-exec(40485) deny(1) process-exec*
+        //       /opt/homebrew/Cellar/rustup/1.29.0/bin/rustup-init
+        //
+        // `/opt/homebrew/bin` was granted. `/opt/homebrew/Cellar` was not, and
+        // that is where the binary really lives. Chasing each symlink to its
+        // target is the same guess in another form — it would have to be redone
+        // for every version manager — so exec follows read instead.
         //
         // This is deliberate rather than a weakening. What contains a build
         // tool is that it cannot write outside the project and its caches, and
         // cannot reach the network. Which binaries it may *start* is not the
         // control doing the work — a build compiles and runs new code by
-        // definition, so exec breadth was never the boundary.
-        for dir in path_directories() {
-            builder = builder.exec(dir);
+        // definition, so exec breadth was never the boundary. Note that this
+        // widens `project_tool` only: `read` on a `Policy` still does not imply
+        // `exec`, so a caller granting read of a data directory grants nothing
+        // more than that.
+        for dir in system_read_directories() {
+            builder = builder.read(&dir).exec(dir);
         }
 
         if let Some(home) = dirs_home() {
             // Toolchain caches. Granting the whole home directory would defeat
             // the point, so only the specific caches a build needs are added.
-            for cache in [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go"] {
+            //
+            // `.cache` is the XDG name and it is a Linux name. macOS puts the
+            // same thing under `Library/Caches`, and a build that cannot write
+            // its cache does not degrade — it fails, and it does not
+            // necessarily say so. `go run` reported
+            //
+            //     package fmt is not in std (…/go/1.25.12/arm64/src/fmt)
+            //
+            // which reads as a missing read grant on GOROOT and is nothing of
+            // the kind: GOROOT was granted and never refused. What the kernel
+            // actually refused was three `file-write-create` under
+            // `~/Library/Caches/go-build`, and the standard library became
+            // unfindable downstream of that. Two rounds went into the read
+            // paths on the strength of that message; the denial log named the
+            // real one immediately.
+            //
+            // This is the same defect as the original `/usr`, `/lib`, `/bin`,
+            // `/etc` read list — a Unix inventory standing in for a platform
+            // that spells these things differently.
+            #[cfg(target_os = "macos")]
+            let caches = [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go", "Library/Caches"];
+            #[cfg(not(target_os = "macos"))]
+            let caches = [".cargo", ".rustup", ".cache", ".npm", ".pyenv", "go"];
+
+            for cache in caches {
                 let path = home.join(cache);
                 // Exec as well as write: on macOS `~/.cargo/bin/rustc` is a
                 // symlink into `~/.rustup/toolchains/…`, and Seatbelt evaluates
@@ -160,7 +322,18 @@ impl Policy {
         }
         // `temp_dir` reads TMPDIR, TMP and TEMP as the platform expects, and
         // returns a real absolute path on all of them.
-        builder = builder.write(std::env::temp_dir());
+        //
+        // Exec as well as write, for the reason the project root gets both: a
+        // build produces a binary and then runs it, and `go run` does that
+        // here rather than in the project —
+        //
+        //     go(49884) deny(1) process-exec*
+        //       /private/var/folders/…/T/go-build729060368/b001/exe/main
+        //
+        // Writable-but-not-executable is not a boundary anything respects. A
+        // process that can write into the temporary directory and start any
+        // program at all can already run what it put there.
+        builder = builder.exec(std::env::temp_dir()).write(std::env::temp_dir());
         builder.build()
     }
 
@@ -197,16 +370,13 @@ impl Policy {
     /// checks; it is not itself an enforcement mechanism.
     pub fn allows_read(&self, path: &Path) -> bool {
         let path = crate::resolve(path).unwrap_or_else(|_| path.to_path_buf());
-        self.read_paths
-            .iter()
-            .chain(self.write_paths.iter())
-            .any(|allowed| path.starts_with(allowed))
+        self.read_paths.iter().chain(self.write_paths.iter()).any(|allowed| covers(allowed, &path))
     }
 
     /// Whether `path` is writable under this policy.
     pub fn allows_write(&self, path: &Path) -> bool {
         let path = crate::resolve(path).unwrap_or_else(|_| path.to_path_buf());
-        self.write_paths.iter().any(|allowed| path.starts_with(allowed))
+        self.write_paths.iter().any(|allowed| covers(allowed, &path))
     }
 
     /// Check the policy is coherent.
@@ -318,6 +488,30 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Windows is excluded deliberately: `LOCALAPPDATA` is on its system list
+    /// and the temporary directory lives inside it, so this property does not
+    /// hold there. That is worth its own look, but asserting it here would be
+    /// claiming a fix that has not been made.
+    #[cfg(unix)]
+    #[test]
+    fn the_system_read_list_does_not_swallow_the_temporary_directory() {
+        // The macOS spellings `/System` and `/private` are much wider than they
+        // look — the whole data volume and every temp directory respectively —
+        // and granting either leaves a deny-by-default policy confining
+        // nothing. The "denied access is refused" tests cannot catch it: they
+        // run a process that dies at startup, which exits non-zero either way.
+        let temp = TempDir::new().unwrap();
+        let inside = temp.path().canonicalize().unwrap();
+        for dir in system_read_directories() {
+            assert!(
+                !inside.starts_with(&dir),
+                "{} grants read of a temporary directory ({})",
+                dir.display(),
+                inside.display()
+            );
+        }
+    }
+
     #[test]
     fn a_project_tool_policy_is_valid_on_the_platform_it_was_built_for() {
         // The Windows stress run failed every program with "policy paths must
@@ -347,6 +541,28 @@ mod tests {
                 policy.exec_paths.iter().any(|granted| dir.starts_with(granted)),
                 "{tool} lives in {} which the policy never grants exec on",
                 dir.display()
+            );
+
+            // And where the name on `PATH` is a symlink, the tree it resolves
+            // into as well: the sandbox judges the resolved path, so granting
+            // the link's directory alone still leaves the launch refused.
+            // `~/.cargo/bin/rustc` resolving through Homebrew's Cellar is how
+            // the macOS stress run lost rustc while `/opt/homebrew/bin` was
+            // granted.
+            let Ok(resolved) = binary.canonicalize() else {
+                continue;
+            };
+            // Through `covers`, not `starts_with`. `canonicalize` on Windows
+            // returns an extended-length path — `\\?\C:\…` — which never
+            // `starts_with` the `C:\…` the policy holds, so the raw comparison
+            // failed there for every tool on `PATH` while being correct
+            // everywhere else. `covers` resolves the grant too, which is the
+            // same reason it exists for `allows_read`.
+            let target = resolved.parent().unwrap();
+            assert!(
+                policy.exec_paths.iter().any(|granted| covers(granted, target)),
+                "{tool} on PATH resolves to {}, which the policy never grants exec on",
+                resolved.display()
             );
         }
     }
@@ -394,6 +610,72 @@ mod tests {
     }
 
     #[test]
+    fn a_toolchain_root_is_granted_but_never_the_home_directory() {
+        // The rule earns its keep by what it refuses. `~/bin` on `PATH` is
+        // ordinary, and one level up from it is everything the user owns.
+        let roots = toolchain_roots();
+        let Some(home) = dirs_home() else {
+            return; // No home to reason about on this machine.
+        };
+        for root in &roots {
+            assert!(
+                !home.starts_with(root),
+                "`{}` was granted, which contains the home directory `{}`",
+                root.display(),
+                home.display()
+            );
+        }
+
+        // And the toolchain trees it exists for are present: every `PATH`
+        // entry deep enough to have a parent outside the home directory
+        // contributes one.
+        for dir in path_directories() {
+            let Some(parent) = dir.parent() else { continue };
+            // Skipped for the same two reasons the rule itself skips them. A
+            // `PATH` entry directly under a drive root — ordinary on Windows,
+            // where the work happens on `D:` — has a filesystem root for a
+            // parent, and the rule excludes those outright.
+            if parent.parent().is_none() || home.starts_with(parent) {
+                continue;
+            }
+            assert!(
+                roots.iter().any(|root| root == parent),
+                "{} is on PATH but its installation root {} was not granted",
+                dir.display(),
+                parent.display()
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_grant_written_through_a_symlink_still_covers_what_it_points_at() {
+        // macOS hands out `/var/folders/…` for the temporary directory and
+        // `/var` is a symlink to `/private/var`, so every policy built around
+        // a temp dir has a grant on one side of a link and questions arriving
+        // from the other. Five policy tests failed on macOS for this and none
+        // could on Linux, where `/tmp` is a real directory.
+        let dir = TempDir::new().unwrap();
+        let real = dir.path().join("real");
+        let link = dir.path().join("link");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("file.txt"), b"").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let policy = Policy::builder().write(&link).build();
+        assert!(policy.allows_write(&link), "the granted path itself must be covered");
+        assert!(
+            policy.allows_write(&link.join("file.txt")),
+            "a file under the granted path must be covered whichever name reaches it"
+        );
+        assert!(
+            policy.allows_write(&real.join("file.txt")),
+            "the same file by its resolved name is the same file"
+        );
+        assert!(!policy.allows_write(Path::new("/etc/passwd")), "and nothing else is");
+    }
+
+    #[test]
     fn relative_policy_paths_are_rejected() {
         let policy = Policy::builder().read("relative/path").build();
         let err = policy.validate().unwrap_err();
@@ -410,8 +692,12 @@ mod tests {
 
     #[test]
     fn a_valid_policy_passes_validation() {
+        // Both paths absolute on the platform running this. `/usr` is not
+        // absolute on Windows — `is_absolute` wants a drive prefix — so
+        // `validate` was right to reject it and this test was wrong to call
+        // the policy valid.
         let dir = TempDir::new().unwrap();
-        Policy::builder().write(dir.path()).read("/usr").build().validate().unwrap();
+        Policy::builder().write(dir.path()).read(std::env::temp_dir()).build().validate().unwrap();
     }
 
     #[test]
@@ -432,10 +718,30 @@ mod tests {
         policy.validate().unwrap();
 
         assert!(policy.allows_write(dir.path()), "the project must be writable");
-        assert!(policy.allows_read(Path::new("/usr")), "the toolchain must be readable");
-        assert!(!policy.allows_write(Path::new("/usr")), "the toolchain must not be writable");
-        assert!(!policy.allows_write(Path::new("/etc")), "system config must not be writable");
+
+        // The platform's own system root, not a Unix literal. `/usr` is
+        // `#[cfg(unix)]` on the read list and could never be on the Windows
+        // one, so asserting it readable there was asserting something the
+        // policy is right to refuse. It went unseen because `nebula-exec`
+        // always failed first and `cargo test` stops at the first failing
+        // target.
+        #[cfg(windows)]
+        let system =
+            PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into()));
+        #[cfg(not(windows))]
+        let system = PathBuf::from("/usr");
+
+        assert!(policy.allows_read(&system), "{} must be readable", system.display());
+        assert!(!policy.allows_write(&system), "{} must not be writable", system.display());
         assert_eq!(policy.network, NetworkAccess::Denied);
+
+        // A build produces a binary and then runs it. Granting write without
+        // exec leaves the second half refused, which is how the C fixture
+        // failed after it had compiled successfully.
+        assert!(
+            policy.exec_paths.iter().any(|granted| dir.path().starts_with(granted)),
+            "a build must be able to run what it just compiled"
+        );
     }
 
     #[test]

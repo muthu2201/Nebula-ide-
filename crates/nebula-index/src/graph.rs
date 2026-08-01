@@ -250,7 +250,13 @@ mod tests {
     fn every_source_file_becomes_a_node() {
         let graph = build();
         assert_eq!(graph.len(), 4);
-        let paths: Vec<String> = graph.files.iter().map(|f| f.path.display().to_string()).collect();
+        // Compared through the portable rendering, not `display`: the stored
+        // path is a real `PathBuf` and rightly uses native separators, so on
+        // Windows `display` gives `src\core.rs` and a comparison against a
+        // literal written with `/` fails for a reason that says nothing about
+        // the graph.
+        let paths: Vec<String> =
+            graph.files.iter().map(|f| crate::map::portable(&f.path)).collect();
         assert!(paths.contains(&"src/core.rs".to_string()), "{paths:?}");
     }
 
