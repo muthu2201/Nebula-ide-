@@ -140,7 +140,7 @@ jobs:
           cargo test --workspace --all-features --no-fail-fast 2>&1 \
             | grep -E -A 12 '^---- |^failures:|panicked at' \
             | tail -300 \
-            || echo "the re-run reported no failures — the first run was flaky"
+            || echo "no panic blocks matched here; read the test step's own output above"
 
       - name: Show what Seatbelt refused
         if: always() && matrix.os == 'macos-15'

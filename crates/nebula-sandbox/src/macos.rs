@@ -17,6 +17,13 @@
 //! platform. [`build_profile`] is pure string work, and the rules it enforces —
 //! deny-by-default, and no path escaping the profile's string literals — are
 //! worth testing on whatever machine happens to run the tests.
+//!
+//! The tests that hand it *paths* are Unix-only, and that is not a gap. A
+//! profile's inputs are POSIX absolute paths by construction, because macOS is
+//! the only thing that ever reads one; `/tmp/…` is not absolute on Windows, so
+//! [`Policy::validate`] rejects it and the assertion never reaches the string
+//! logic. Feeding the builder `C:\…` instead would exercise a profile that
+//! cannot exist. Linux runs them on every pull request.
 
 use crate::Result;
 use crate::policy::{NetworkAccess, Policy};
@@ -268,6 +275,14 @@ mod tests {
         assert!(profile.starts_with("(version 1)\n(deny default)"));
     }
 
+    // Unix only. A Seatbelt profile is consumed by macOS's `sandbox_init` and
+    // by nothing else, so its inputs are POSIX absolute paths by construction —
+    // and a POSIX absolute path is not absolute on Windows, where `is_absolute`
+    // wants a drive prefix. `validate` is right to reject `/tmp/…` there, which
+    // makes every one of these panic on the `unwrap` rather than test anything.
+    // Handing the builder `C:\…` instead would exercise a profile that can
+    // never exist. They still run on Linux, on every pull request, and on macOS.
+    #[cfg(unix)]
     #[test]
     fn granted_paths_appear_in_the_profile() {
         // Real directories, because `resolve` canonicalises: asserting on
@@ -299,6 +314,14 @@ mod tests {
         );
     }
 
+    // Unix only. A Seatbelt profile is consumed by macOS's `sandbox_init` and
+    // by nothing else, so its inputs are POSIX absolute paths by construction —
+    // and a POSIX absolute path is not absolute on Windows, where `is_absolute`
+    // wants a drive prefix. `validate` is right to reject `/tmp/…` there, which
+    // makes every one of these panic on the `unwrap` rather than test anything.
+    // Handing the builder `C:\…` instead would exercise a profile that can
+    // never exist. They still run on Linux, on every pull request, and on macOS.
+    #[cfg(unix)]
     #[test]
     fn every_rule_names_its_path_on_both_volumes() {
         // `/Users`, `/opt`, `/private` and the rest are firmlinked onto the
@@ -324,6 +347,14 @@ mod tests {
         );
     }
 
+    // Unix only. A Seatbelt profile is consumed by macOS's `sandbox_init` and
+    // by nothing else, so its inputs are POSIX absolute paths by construction —
+    // and a POSIX absolute path is not absolute on Windows, where `is_absolute`
+    // wants a drive prefix. `validate` is right to reject `/tmp/…` there, which
+    // makes every one of these panic on the `unwrap` rather than test anything.
+    // Handing the builder `C:\…` instead would exercise a profile that can
+    // never exist. They still run on Linux, on every pull request, and on macOS.
+    #[cfg(unix)]
     #[test]
     fn a_data_volume_path_gains_its_short_spelling_rather_than_a_second_prefix() {
         // `realpath` resolves firmlinks on some macOS releases, so the
@@ -361,6 +392,14 @@ mod tests {
         );
     }
 
+    // Unix only. A Seatbelt profile is consumed by macOS's `sandbox_init` and
+    // by nothing else, so its inputs are POSIX absolute paths by construction —
+    // and a POSIX absolute path is not absolute on Windows, where `is_absolute`
+    // wants a drive prefix. `validate` is right to reject `/tmp/…` there, which
+    // makes every one of these panic on the `unwrap` rather than test anything.
+    // Handing the builder `C:\…` instead would exercise a profile that can
+    // never exist. They still run on Linux, on every pull request, and on macOS.
+    #[cfg(unix)]
     #[test]
     fn the_root_is_not_given_a_trailing_slash_twin() {
         let policy = Policy { read_paths: vec![PathBuf::from("/")], ..Policy::deny_all() };
@@ -395,6 +434,14 @@ mod tests {
         assert!(allowed.contains("(allow network*)"));
     }
 
+    // Unix only. A Seatbelt profile is consumed by macOS's `sandbox_init` and
+    // by nothing else, so its inputs are POSIX absolute paths by construction —
+    // and a POSIX absolute path is not absolute on Windows, where `is_absolute`
+    // wants a drive prefix. `validate` is right to reject `/tmp/…` there, which
+    // makes every one of these panic on the `unwrap` rather than test anything.
+    // Handing the builder `C:\…` instead would exercise a profile that can
+    // never exist. They still run on Linux, on every pull request, and on macOS.
+    #[cfg(unix)]
     #[test]
     fn paths_with_quotes_cannot_escape_the_string_literal() {
         // A directory literally named `evil") (allow default) ("x` would
@@ -418,6 +465,14 @@ mod tests {
         );
     }
 
+    // Unix only. A Seatbelt profile is consumed by macOS's `sandbox_init` and
+    // by nothing else, so its inputs are POSIX absolute paths by construction —
+    // and a POSIX absolute path is not absolute on Windows, where `is_absolute`
+    // wants a drive prefix. `validate` is right to reject `/tmp/…` there, which
+    // makes every one of these panic on the `unwrap` rather than test anything.
+    // Handing the builder `C:\…` instead would exercise a profile that can
+    // never exist. They still run on Linux, on every pull request, and on macOS.
+    #[cfg(unix)]
     #[test]
     fn backslashes_are_escaped() {
         let policy = Policy { read_paths: vec![PathBuf::from("/tmp/a\\b")], ..Policy::deny_all() };

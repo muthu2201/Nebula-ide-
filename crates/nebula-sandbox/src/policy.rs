@@ -692,8 +692,12 @@ mod tests {
 
     #[test]
     fn a_valid_policy_passes_validation() {
+        // Both paths absolute on the platform running this. `/usr` is not
+        // absolute on Windows — `is_absolute` wants a drive prefix — so
+        // `validate` was right to reject it and this test was wrong to call
+        // the policy valid.
         let dir = TempDir::new().unwrap();
-        Policy::builder().write(dir.path()).read("/usr").build().validate().unwrap();
+        Policy::builder().write(dir.path()).read(std::env::temp_dir()).build().validate().unwrap();
     }
 
     #[test]
