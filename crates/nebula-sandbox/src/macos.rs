@@ -13,12 +13,17 @@
 //! standing risk, and the fallback if Apple removes it is to run agent tools in
 //! a local VM, as Anthropic's Claude Cowork does.
 //!
-//! The deprecation warning is silenced at the single call site rather than
-//! crate-wide, so a future removal surfaces as a compile error here.
+//! Everything except [`apply`] and the `sandbox_init` binding is built on every
+//! platform. [`build_profile`] is pure string work, and the rules it enforces —
+//! deny-by-default, and no path escaping the profile's string literals — are
+//! worth testing on whatever machine happens to run the tests.
 
+use crate::Result;
 use crate::policy::{NetworkAccess, Policy};
-use crate::{Enforcement, Result, SandboxError};
+#[cfg(target_os = "macos")]
+use crate::{Enforcement, SandboxError};
 
+#[cfg(target_os = "macos")]
 unsafe extern "C" {
     /// `int sandbox_init(const char *profile, uint64_t flags, char **errorbuf);`
     fn sandbox_init(
@@ -32,6 +37,7 @@ unsafe extern "C" {
 }
 
 /// Apply `policy` to the calling process.
+#[cfg(target_os = "macos")]
 pub fn apply(policy: &Policy) -> Result<Enforcement> {
     let profile = build_profile(policy)?;
     let profile_c = std::ffi::CString::new(profile)
@@ -61,9 +67,9 @@ pub fn apply(policy: &Policy) -> Result<Enforcement> {
 
 /// Build the Seatbelt profile text for a policy.
 ///
-/// Exposed (crate-internally) so it can be tested on any platform without
-/// actually confining the test process.
-pub(crate) fn build_profile(policy: &Policy) -> Result<String> {
+/// Public so it can be inspected — and tested — on any platform without
+/// actually confining the calling process.
+pub fn build_profile(policy: &Policy) -> Result<String> {
     policy.validate()?;
 
     let mut profile = String::from("(version 1)\n(deny default)\n");
@@ -131,6 +137,7 @@ fn quote_scheme(value: &str) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     #[test]
     fn profiles_deny_by_default() {
@@ -140,12 +147,33 @@ mod tests {
 
     #[test]
     fn granted_paths_appear_in_the_profile() {
-        let policy = Policy::builder().read("/usr").write("/tmp/work").exec("/bin").build();
+        // Real directories, because `resolve` canonicalises: asserting on
+        // `/bin` would pass on macOS and fail on a Linux box where `/bin` is a
+        // symlink to `/usr/bin`.
+        let dir = TempDir::new().unwrap();
+        let read = dir.path().join("read");
+        let write = dir.path().join("write");
+        let exec = dir.path().join("exec");
+        for path in [&read, &write, &exec] {
+            std::fs::create_dir(path).unwrap();
+        }
+
+        let policy = Policy::builder().read(&read).write(&write).exec(&exec).build();
         let profile = build_profile(&policy).unwrap();
 
-        assert!(profile.contains("(allow file-read* (subpath \"/usr\"))"), "{profile}");
-        assert!(profile.contains("file-write* (subpath \"/tmp/work\")"), "{profile}");
-        assert!(profile.contains("process-exec (subpath \"/bin\")"), "{profile}");
+        let canonical = |p: &PathBuf| p.canonicalize().unwrap().display().to_string();
+        assert!(
+            profile.contains(&format!("(allow file-read* (subpath \"{}\"))", canonical(&read))),
+            "{profile}"
+        );
+        assert!(
+            profile.contains(&format!("(allow file-write* (subpath \"{}\"))", canonical(&write))),
+            "{profile}"
+        );
+        assert!(
+            profile.contains(&format!("(allow process-exec (subpath \"{}\"))", canonical(&exec))),
+            "{profile}"
+        );
     }
 
     #[test]
@@ -160,14 +188,25 @@ mod tests {
 
     #[test]
     fn paths_with_quotes_cannot_escape_the_string_literal() {
-        // A directory literally named `evil") (allow default) ("` would
-        // otherwise rewrite the profile.
+        // A directory literally named `evil") (allow default) ("x` would
+        // rewrite the profile if its quotes reached the output unescaped.
         let hostile = PathBuf::from("/tmp/evil\") (allow default) (\"x");
         let policy = Policy { read_paths: vec![hostile], ..Policy::deny_all() };
         let profile = build_profile(&policy).unwrap();
 
-        assert!(!profile.contains("(allow default)"), "profile injection succeeded:\n{profile}");
-        assert!(profile.contains("\\\""), "the quote should have been escaped:\n{profile}");
+        // The text `(allow default)` is still *present* — it is part of the
+        // directory's name. What matters is that it stays inside the string
+        // literal, which it does exactly when the injected quotes are escaped.
+        // Asserting merely that the text is absent would pass even if nothing
+        // were escaped at all, which is how this went unverified for so long.
+        assert!(
+            !profile.contains("\") (allow default) (\""),
+            "the hostile quotes reached the profile unescaped:\n{profile}"
+        );
+        assert!(
+            profile.contains("\\\") (allow default) (\\\""),
+            "the hostile path should appear with its quotes escaped:\n{profile}"
+        );
     }
 
     #[test]

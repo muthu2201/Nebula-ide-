@@ -125,7 +125,7 @@ impl ResourceLimits {
             set(Resource::RLIMIT_AS, bytes, "RLIMIT_AS");
         }
         if let Some(count) = self.max_processes {
-            set(Resource::RLIMIT_NPROC, count, "RLIMIT_NPROC");
+            set_nproc(count);
         }
         if let Some(seconds) = self.max_cpu_seconds {
             set(Resource::RLIMIT_CPU, seconds, "RLIMIT_CPU");
@@ -142,6 +142,26 @@ impl ResourceLimits {
     #[cfg(not(unix))]
     pub fn apply_to_current_process(&self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+/// Cap the number of processes the user may own.
+///
+/// This is the fork-bomb defence, and it goes through `libc` rather than `nix`
+/// because `nix` does not expose `RLIMIT_NPROC` on macOS even though the
+/// platform has it. Skipping the limit there instead would leave one platform's
+/// sandbox materially weaker than the others, which is not a trade worth making
+/// to keep the code tidy.
+#[cfg(unix)]
+fn set_nproc(value: u64) {
+    let limit = libc::rlimit { rlim_cur: value as libc::rlim_t, rlim_max: value as libc::rlim_t };
+    // SAFETY: `setrlimit` reads the `rlimit` behind the pointer and writes
+    // nothing through it. The pointer is to a live local, correctly aligned and
+    // initialised, and does not outlive the call.
+    let failed = unsafe { libc::setrlimit(libc::RLIMIT_NPROC as _, &limit) } == -1;
+    if failed {
+        let err = std::io::Error::last_os_error();
+        tracing::debug!(%err, limit = "RLIMIT_NPROC", value, "could not set resource limit");
     }
 }
 

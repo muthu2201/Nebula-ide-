@@ -43,7 +43,10 @@ pub mod policy;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-#[cfg(target_os = "macos")]
+// Built on every platform, not just macOS: the profile builder is pure string
+// work, and compiling it everywhere means its tests — including the ones for
+// profile injection — run everywhere too. Only `macos::apply` and the
+// `sandbox_init` binding are macOS-only.
 pub mod macos;
 
 #[cfg(windows)]
