@@ -135,13 +135,17 @@ fn classify(kind: &notify::EventKind) -> ChangeKind {
     use notify::EventKind;
     use notify::event::{CreateKind, ModifyKind, RenameMode};
     match kind {
-        EventKind::Create(CreateKind::Any | CreateKind::File | CreateKind::Folder | CreateKind::Other) => {
-            ChangeKind::Created
-        }
+        EventKind::Create(
+            CreateKind::Any | CreateKind::File | CreateKind::Folder | CreateKind::Other,
+        ) => ChangeKind::Created,
         EventKind::Remove(_) => ChangeKind::Removed,
-        EventKind::Modify(ModifyKind::Name(RenameMode::Any | RenameMode::To | RenameMode::From | RenameMode::Both | RenameMode::Other)) => {
-            ChangeKind::Renamed
-        }
+        EventKind::Modify(ModifyKind::Name(
+            RenameMode::Any
+            | RenameMode::To
+            | RenameMode::From
+            | RenameMode::Both
+            | RenameMode::Other,
+        )) => ChangeKind::Renamed,
         _ => ChangeKind::Modified,
     }
 }

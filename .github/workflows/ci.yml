@@ -1,0 +1,131 @@
+# Everything that has to be true before a change lands.
+#
+# The jobs are split so a failure names its own cause: a formatting job that
+# also runs the tests tells you "CI failed" and nothing more.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  # A warning that nobody sees is a warning that never gets fixed.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  format:
+    name: rustfmt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config
+      - run: cargo clippy --workspace --all-targets --all-features
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install the Linux build dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config \
+            mesa-vulkan-drivers vulkan-tools
+
+      - name: Check that Landlock is available
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          # GitHub's Ubuntu 24.04 runners are on kernel 6.x, so the sandbox
+          # tests must actually enforce here rather than skipping. Without this
+          # gate a kernel regression would silently turn the whole sandbox suite
+          # into no-ops.
+          test -e /sys/kernel/security/lsm && cat /sys/kernel/security/lsm || true
+          echo "NEBULA_REQUIRE_SANDBOX=1" >> "$GITHUB_ENV"
+
+      - name: Use the software Vulkan driver
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          # lavapipe gives the GPU backend a real adapter on a headless runner,
+          # so the wgpu path is exercised rather than skipped.
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+          echo "NEBULA_REQUIRE_GPU=1" >> "$GITHUB_ENV"
+
+      - run: cargo test --workspace --all-features
+
+      - name: Check that the headless build stands alone
+        run: cargo check -p nebula-ide --no-default-features
+
+  docs:
+    name: rustdoc
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config
+      - name: Build the API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings -D rustdoc::broken_intra_doc_links
+        run: cargo doc --workspace --no-deps --all-features
+
+  msrv:
+    name: minimum supported Rust version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Read the MSRV from the workspace manifest
+        id: msrv
+        run: |
+          version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config
+      - run: cargo check --workspace --all-features

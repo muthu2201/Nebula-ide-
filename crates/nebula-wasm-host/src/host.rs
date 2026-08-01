@@ -114,11 +114,10 @@ impl ExtensionHost {
             .max_wasm_stack(1024 * 1024)
             .cranelift_opt_level(wasmtime::OptLevel::Speed);
 
-        let engine = Engine::new(&config)
-            .map_err(|e| WasmError::Compile {
-                name: "<engine>".to_string(),
-                source: anyhow_lite::Error::new(e),
-            })?;
+        let engine = Engine::new(&config).map_err(|e| WasmError::Compile {
+            name: "<engine>".to_string(),
+            source: anyhow_lite::Error::new(e),
+        })?;
 
         // The epoch ticker: one thread advancing the engine's epoch counter, for
         // every store in the host. Without it, `set_epoch_deadline` never fires.
@@ -175,8 +174,8 @@ impl ExtensionHost {
             }
         }
 
-        let world_version = world_version_from_imports(&imports)
-            .unwrap_or_else(|| self.world.latest().clone());
+        let world_version =
+            world_version_from_imports(&imports).unwrap_or_else(|| self.world.latest().clone());
         if !self.world.supports(&world_version) {
             return Err(WasmError::IncompatibleWorld {
                 name: name.to_string(),
@@ -190,12 +189,7 @@ impl ExtensionHost {
             source: anyhow_lite::Error::new(e),
         })?;
 
-        Ok(LoadedExtension {
-            name: name.to_string(),
-            component,
-            required,
-            world_version,
-        })
+        Ok(LoadedExtension { name: name.to_string(), component, required, world_version })
     }
 
     /// Compile a component from a file.
@@ -229,20 +223,12 @@ impl ExtensionHost {
         // component importing an interface the linker does not provide fails to
         // instantiate, which is the WIT world doing its job.
 
-        let instance = linker
-            .instantiate_async(&mut store, &extension.component)
-            .await
-            .map_err(|e| WasmError::Instantiate {
-                name: extension.name.clone(),
-                detail: flatten(&e),
+        let instance =
+            linker.instantiate_async(&mut store, &extension.component).await.map_err(|e| {
+                WasmError::Instantiate { name: extension.name.clone(), detail: flatten(&e) }
             })?;
 
-        Ok(ExtensionInstance {
-            name: extension.name.clone(),
-            store,
-            instance,
-            limits,
-        })
+        Ok(ExtensionInstance { name: extension.name.clone(), store, instance, limits })
     }
 
     /// Load and instantiate in one step.
@@ -288,13 +274,9 @@ impl ExtensionInstance {
     /// by the call it bounds, and a second call with a stale deadline would trap
     /// immediately.
     pub async fn call(&mut self, export: &str, arguments: &[Val]) -> Result<Vec<Val>> {
-        let function = self
-            .instance
-            .get_func(&mut self.store, export)
-            .ok_or_else(|| WasmError::MissingExport {
-                name: self.name.clone(),
-                export: export.to_string(),
-            })?;
+        let function = self.instance.get_func(&mut self.store, export).ok_or_else(|| {
+            WasmError::MissingExport { name: self.name.clone(), export: export.to_string() }
+        })?;
 
         let result_count = function.ty(&self.store).results().len();
         let mut results = vec![Val::Bool(false); result_count];
@@ -558,7 +540,12 @@ mod tests {
         // fails unless the limits are re-armed.
         let host = ExtensionHost::new().unwrap();
         let mut instance = host
-            .start("simple", &simple_component(), &no_capabilities(), ExecutionLimits::interactive())
+            .start(
+                "simple",
+                &simple_component(),
+                &no_capabilities(),
+                ExecutionLimits::interactive(),
+            )
             .await
             .unwrap();
 
@@ -587,7 +574,12 @@ mod tests {
     async fn a_missing_export_is_named() {
         let host = ExtensionHost::new().unwrap();
         let mut instance = host
-            .start("simple", &simple_component(), &no_capabilities(), ExecutionLimits::interactive())
+            .start(
+                "simple",
+                &simple_component(),
+                &no_capabilities(),
+                ExecutionLimits::interactive(),
+            )
             .await
             .unwrap();
 
@@ -631,10 +623,7 @@ mod tests {
             .unwrap();
 
         let err = instance.call("run", &[]).await.unwrap_err();
-        assert!(
-            matches!(err, WasmError::OutOfFuel { .. }),
-            "expected a fuel error, got {err:?}"
-        );
+        assert!(matches!(err, WasmError::OutOfFuel { .. }), "expected a fuel error, got {err:?}");
     }
 
     #[tokio::test]
@@ -650,10 +639,8 @@ mod tests {
                 .start("spinner", &infinite_loop_component(), &no_capabilities(), limits)
                 .await
                 .unwrap();
-            outcomes.push(matches!(
-                instance.call("run", &[]).await,
-                Err(WasmError::OutOfFuel { .. })
-            ));
+            outcomes
+                .push(matches!(instance.call("run", &[]).await, Err(WasmError::OutOfFuel { .. })));
         }
         assert_eq!(outcomes, vec![true, true, true]);
     }
@@ -662,10 +649,8 @@ mod tests {
     async fn a_normal_call_does_not_exhaust_a_reasonable_budget() {
         let host = ExtensionHost::new().unwrap();
         let limits = ExecutionLimits::deterministic(1_000_000);
-        let mut instance = host
-            .start("simple", &simple_component(), &no_capabilities(), limits)
-            .await
-            .unwrap();
+        let mut instance =
+            host.start("simple", &simple_component(), &no_capabilities(), limits).await.unwrap();
 
         assert_eq!(instance.call("run", &[]).await.unwrap()[0], Val::S32(42));
         assert!(instance.fuel_remaining().is_some_and(|fuel| fuel > 0));
@@ -678,10 +663,8 @@ mod tests {
         let host = ExtensionHost::with_caps(caps).unwrap();
         let limits = ExecutionLimits::background().deadline(Duration::from_secs(10));
 
-        let mut instance = host
-            .start("hog", &memory_hog_component(), &no_capabilities(), limits)
-            .await
-            .unwrap();
+        let mut instance =
+            host.start("hog", &memory_hog_component(), &no_capabilities(), limits).await.unwrap();
 
         let results = instance.call("run", &[]).await.unwrap();
         let pages = match results[0] {
@@ -690,10 +673,7 @@ mod tests {
         };
 
         // A page is 64 KiB, so an 8 MiB cap is 128 pages.
-        assert!(
-            pages <= 128,
-            "the guest obtained {pages} pages against a 128-page cap"
-        );
+        assert!(pages <= 128, "the guest obtained {pages} pages against a 128-page cap");
         assert!(
             instance.hit_memory_limit(),
             "the refusal should be recorded so the host can explain it"
@@ -706,10 +686,8 @@ mod tests {
         let host = ExtensionHost::with_caps(caps).unwrap();
         let limits = ExecutionLimits::background().deadline(Duration::from_secs(10));
 
-        let mut instance = host
-            .start("hog", &memory_hog_component(), &no_capabilities(), limits)
-            .await
-            .unwrap();
+        let mut instance =
+            host.start("hog", &memory_hog_component(), &no_capabilities(), limits).await.unwrap();
 
         let results = instance.call("run", &[]).await.unwrap();
         let pages = match results[0] {

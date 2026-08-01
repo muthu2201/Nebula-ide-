@@ -183,9 +183,7 @@ impl KeyStore {
             KeyStore::OsKeychain => {
                 let entry = keyring::Entry::new(SERVICE, provider.id())
                     .map_err(|e| AiError::Keychain(e.to_string()))?;
-                entry
-                    .set_password(key.expose())
-                    .map_err(|e| AiError::Keychain(e.to_string()))
+                entry.set_password(key.expose()).map_err(|e| AiError::Keychain(e.to_string()))
             }
             KeyStore::Memory(map) => {
                 map.lock().insert(provider.id().to_string(), key.expose().to_string());
@@ -256,11 +254,7 @@ fn resolve_key(
         return Ok(ApiKey::new(key));
     }
     if let Some(key) = from_env.filter(|k| !k.trim().is_empty()) {
-        tracing::debug!(
-            provider = provider.id(),
-            "using the API key from {}",
-            provider.env_var()
-        );
+        tracing::debug!(provider = provider.id(), "using the API key from {}", provider.env_var());
         return Ok(ApiKey::new(key));
     }
     Err(AiError::NoApiKey(provider.id().to_string()))
@@ -285,10 +279,7 @@ mod tests {
         let debug = format!("{key:?}");
         let display = format!("{key}");
         for rendering in [&debug, &display] {
-            assert!(
-                !rendering.contains("SECRETSECRET"),
-                "a key reached a log line: {rendering}"
-            );
+            assert!(!rendering.contains("SECRETSECRET"), "a key reached a log line: {rendering}");
         }
         assert!(debug.contains("sk-ant-a"), "a prefix is fine and helps identify the key");
         assert!(debug.contains('…'));
@@ -331,10 +322,7 @@ mod tests {
 
         store.set(Provider::Anthropic, &ApiKey::new("sk-ant-api03-test-key-value")).unwrap();
         assert!(store.has(Provider::Anthropic));
-        assert_eq!(
-            store.get(Provider::Anthropic).unwrap().expose(),
-            "sk-ant-api03-test-key-value"
-        );
+        assert_eq!(store.get(Provider::Anthropic).unwrap().expose(), "sk-ant-api03-test-key-value");
     }
 
     #[test]
@@ -388,9 +376,8 @@ mod tests {
     #[test]
     fn the_environment_is_used_when_nothing_is_stored() {
         // An already-exported key should not have to be entered a second time.
-        let key =
-            resolve_key(Provider::OpenAi, None, Some("sk-from-the-environment".to_string()))
-                .unwrap();
+        let key = resolve_key(Provider::OpenAi, None, Some("sk-from-the-environment".to_string()))
+            .unwrap();
         assert_eq!(key.expose(), "sk-from-the-environment");
     }
 

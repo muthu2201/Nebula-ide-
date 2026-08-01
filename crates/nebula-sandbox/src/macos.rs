@@ -153,10 +153,8 @@ mod tests {
         let denied = build_profile(&Policy::deny_all()).unwrap();
         assert!(denied.contains("(deny network*)"));
 
-        let allowed = build_profile(
-            &Policy::builder().network(NetworkAccess::Allowed).build(),
-        )
-        .unwrap();
+        let allowed =
+            build_profile(&Policy::builder().network(NetworkAccess::Allowed).build()).unwrap();
         assert!(allowed.contains("(allow network*)"));
     }
 
@@ -168,17 +166,13 @@ mod tests {
         let policy = Policy { read_paths: vec![hostile], ..Policy::deny_all() };
         let profile = build_profile(&policy).unwrap();
 
-        assert!(
-            !profile.contains("(allow default)"),
-            "profile injection succeeded:\n{profile}"
-        );
+        assert!(!profile.contains("(allow default)"), "profile injection succeeded:\n{profile}");
         assert!(profile.contains("\\\""), "the quote should have been escaped:\n{profile}");
     }
 
     #[test]
     fn backslashes_are_escaped() {
-        let policy =
-            Policy { read_paths: vec![PathBuf::from("/tmp/a\\b")], ..Policy::deny_all() };
+        let policy = Policy { read_paths: vec![PathBuf::from("/tmp/a\\b")], ..Policy::deny_all() };
         let profile = build_profile(&policy).unwrap();
         assert!(profile.contains("\\\\"), "{profile}");
     }

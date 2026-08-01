@@ -332,8 +332,8 @@ mod tests {
 
     #[test]
     fn scoped_grants_only_cover_their_paths() {
-        let grants = GrantSet::none()
-            .allow(Grant::new(Capability::WriteFiles).scoped_to("/project/src"));
+        let grants =
+            GrantSet::none().allow(Grant::new(Capability::WriteFiles).scoped_to("/project/src"));
 
         assert!(grants.allows_path(Capability::WriteFiles, Path::new("/project/src/main.rs")));
         assert!(!grants.allows_path(Capability::WriteFiles, Path::new("/project/secrets.env")));
@@ -380,8 +380,8 @@ mod tests {
     fn intersection_keeps_the_narrower_path_scope() {
         let parent =
             GrantSet::none().allow(Grant::new(Capability::WriteFiles).scoped_to("/project"));
-        let child = GrantSet::none()
-            .allow(Grant::new(Capability::WriteFiles).scoped_to("/project/src"));
+        let child =
+            GrantSet::none().allow(Grant::new(Capability::WriteFiles).scoped_to("/project/src"));
 
         let effective = child.intersect(&parent);
         assert!(effective.allows_path(Capability::WriteFiles, Path::new("/project/src/main.rs")));
@@ -395,8 +395,7 @@ mod tests {
 
     #[test]
     fn intersection_preserves_an_approval_requirement_from_either_side() {
-        let parent =
-            GrantSet::none().allow(Grant::new(Capability::WriteFiles).with_approval());
+        let parent = GrantSet::none().allow(Grant::new(Capability::WriteFiles).with_approval());
         let child = GrantSet::none().allow(Grant::new(Capability::WriteFiles));
 
         assert!(child.intersect(&parent).requires_approval(Capability::WriteFiles));

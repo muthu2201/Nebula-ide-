@@ -1,0 +1,146 @@
+# The end-to-end stress run.
+#
+# This is the job that decides whether the editor actually works: it drives a
+# real editor over a real project, and it compiles and runs six real programs.
+# It is slow and it needs toolchains, so it is its own workflow rather than a
+# step in CI.
+
+name: Stress
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/stress.yml"
+  schedule:
+    # Nightly, so a performance regression is caught against a quiet runner
+    # rather than one contended by whatever else is in the queue.
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+    inputs:
+      keystrokes:
+        description: How many keystrokes the editing phase delivers
+        default: "5000"
+      generated_lines:
+        description: How many lines the generated file gets
+        default: "200000"
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    name: stress (${{ matrix.os }}, ${{ matrix.renderer }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Both renderers on Linux, because the fallback is the path most
+          # likely to rot: it is the one nobody uses on their own machine.
+          - os: ubuntu-24.04
+            renderer: gpu
+            flags: ""
+          - os: ubuntu-24.04
+            renderer: cpu
+            flags: "--cpu"
+          - os: macos-15
+            renderer: gpu
+            flags: ""
+          - os: windows-2025
+            renderer: cpu
+            flags: "--cpu"
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Every toolchain the fixture's programs need. `--require-all-toolchains`
+      # below turns a missing one into a failure, so a runner image that drops
+      # a compiler cannot quietly shrink the test.
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install the Linux build and graphics dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config \
+            mesa-vulkan-drivers vulkan-tools
+
+      - name: Use the software Vulkan driver
+        if: startsWith(matrix.os, 'ubuntu') && matrix.renderer == 'gpu'
+        run: |
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+
+      - name: Build the harness with optimisations
+        # A stress run against a debug build measures the debug build.
+        run: cargo build --release -p nebula-stress
+
+      - name: Run the stress test
+        shell: bash
+        run: |
+          ./target/release/nebula-stress \
+            ${{ matrix.flags }} \
+            --workdir "${RUNNER_TEMP}/nebula-fixture" \
+            --keystrokes "${{ inputs.keystrokes || '5000' }}" \
+            --generated-lines "${{ inputs.generated_lines || '200000' }}" \
+            --require-all-toolchains \
+            --json "stress-results/${{ matrix.os }}-${{ matrix.renderer }}.json" \
+            --markdown "stress-results/${{ matrix.os }}-${{ matrix.renderer }}.md"
+
+      - name: Add the report to the job summary
+        if: always()
+        shell: bash
+        run: |
+          report="stress-results/${{ matrix.os }}-${{ matrix.renderer }}.md"
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The run produced no report — it failed before finishing." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-${{ matrix.os }}-${{ matrix.renderer }}
+          path: stress-results/
+          retention-days: 30
+
+  benchmarks:
+    name: benchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config
+      # Criterion's numbers are only comparable against a baseline from the same
+      # runner class, so these are recorded rather than gated on.
+      - run: cargo bench --workspace -- --output-format bencher | tee benchmarks.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmarks
+          path: benchmarks.txt
+          retention-days: 30

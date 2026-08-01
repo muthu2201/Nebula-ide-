@@ -336,10 +336,7 @@ impl Report {
             } else {
                 "FAILED"
             };
-            out.push_str(&format!(
-                "### {} — {verdict} ({:.2?})\n\n",
-                phase.name, phase.elapsed
-            ));
+            out.push_str(&format!("### {} — {verdict} ({:.2?})\n\n", phase.name, phase.elapsed));
 
             for note in &phase.notes {
                 out.push_str(&format!("{note}\n\n"));
@@ -391,11 +388,8 @@ impl Report {
                     "**FAILED**"
                 };
                 let output = program.output.replace('\n', " ⏎ ");
-                let output = if output.len() > 80 {
-                    format!("{}…", &output[..80])
-                } else {
-                    output
-                };
+                let output =
+                    if output.len() > 80 { format!("{}…", &output[..80]) } else { output };
                 out.push_str(&format!(
                     "| {} | `{}` | {build} | {:.2?} | {result} | {output} |\n",
                     program.language, program.command, program.run
@@ -418,9 +412,8 @@ fn millis_of(duration: Duration) -> f64 {
 /// needs one timestamp, and the civil-calendar arithmetic for that is short and
 /// exact.
 fn timestamp() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
+    let now =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let seconds = now.as_secs();
 
     let (days, time) = (seconds / 86_400, seconds % 86_400);
@@ -560,10 +553,9 @@ mod tests {
     #[test]
     fn a_report_survives_a_round_trip_through_json() {
         let mut report = bare_report();
-        report.phases.push(phase_with_budget(
-            Duration::from_micros(1_500),
-            Duration::from_millis(8),
-        ));
+        report
+            .phases
+            .push(phase_with_budget(Duration::from_micros(1_500), Duration::from_millis(8)));
         report.finish();
 
         let json = serde_json::to_string_pretty(&report).unwrap();
@@ -578,10 +570,7 @@ mod tests {
     #[test]
     fn the_markdown_names_the_verdict_and_the_numbers() {
         let mut report = bare_report();
-        report.phases.push(phase_with_budget(
-            Duration::from_millis(2),
-            Duration::from_millis(8),
-        ));
+        report.phases.push(phase_with_budget(Duration::from_millis(2), Duration::from_millis(8)));
         report.programs.push(ProgramRun {
             language: "c".to_string(),
             command: "./sieve".to_string(),
@@ -604,10 +593,7 @@ mod tests {
     #[test]
     fn the_markdown_lists_failures_first() {
         let mut report = bare_report();
-        report.phases.push(phase_with_budget(
-            Duration::from_millis(80),
-            Duration::from_millis(8),
-        ));
+        report.phases.push(phase_with_budget(Duration::from_millis(80), Duration::from_millis(8)));
         report.finish();
 
         let markdown = report.to_markdown();

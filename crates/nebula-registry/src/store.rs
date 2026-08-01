@@ -204,10 +204,7 @@ impl Registry {
         }
 
         self.store(entry, package_bytes.to_vec());
-        Ok(PublishOutcome::Published {
-            id: manifest.id,
-            version: manifest.version.to_string(),
-        })
+        Ok(PublishOutcome::Published { id: manifest.id, version: manifest.version.to_string() })
     }
 
     fn store(&self, entry: RegistryEntry, bytes: Vec<u8>) {
@@ -379,7 +376,10 @@ mod tests {
         let outcome = registry.publish(&bytes).unwrap();
         assert!(outcome.is_live(), "{outcome:?}");
         assert_eq!(registry.len(), 1);
-        assert_eq!(registry.latest("com.example.thing").unwrap().manifest.version, Version::new(1, 0, 0));
+        assert_eq!(
+            registry.latest("com.example.thing").unwrap().manifest.version,
+            Version::new(1, 0, 0)
+        );
     }
 
     #[test]
@@ -474,8 +474,7 @@ mod tests {
     #[test]
     fn approving_a_held_version_publishes_it() {
         let (registry, keys) = registry_with_publisher();
-        let bytes =
-            package(&keys, manifest("com.example.runner", "1.0.0", &[Capability::Network]));
+        let bytes = package(&keys, manifest("com.example.runner", "1.0.0", &[Capability::Network]));
         registry.publish(&bytes).unwrap();
 
         registry.approve_pending("com.example.runner", &Version::new(1, 0, 0)).unwrap();
@@ -523,9 +522,7 @@ mod tests {
     fn several_versions_are_kept_and_the_newest_is_returned() {
         let (registry, keys) = registry_with_publisher();
         for version in ["1.0.0", "1.1.0", "2.0.0"] {
-            registry
-                .publish(&package(&keys, manifest("com.example.thing", version, &[])))
-                .unwrap();
+            registry.publish(&package(&keys, manifest("com.example.thing", version, &[]))).unwrap();
         }
 
         assert_eq!(registry.versions("com.example.thing").len(), 3);

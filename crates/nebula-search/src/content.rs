@@ -91,7 +91,8 @@ impl SearchQuery {
     }
 
     fn build_matcher(&self) -> Result<RegexMatcher> {
-        let pattern = if self.literal { regex::escape(&self.pattern) } else { self.pattern.clone() };
+        let pattern =
+            if self.literal { regex::escape(&self.pattern) } else { self.pattern.clone() };
         let pattern = if self.whole_word { format!(r"\b(?:{pattern})\b") } else { pattern };
 
         RegexMatcherBuilder::new()
@@ -325,7 +326,11 @@ struct MatchSink<'a> {
 impl Sink for MatchSink<'_> {
     type Error = std::io::Error;
 
-    fn matched(&mut self, _searcher: &Searcher, sink_match: &SinkMatch<'_>) -> std::io::Result<bool> {
+    fn matched(
+        &mut self,
+        _searcher: &Searcher,
+        sink_match: &SinkMatch<'_>,
+    ) -> std::io::Result<bool> {
         if self.cancel.load(Ordering::Relaxed) || self.matches.len() >= self.limit {
             // Returning false stops the search for this file.
             return Ok(false);
@@ -492,14 +497,12 @@ mod tests {
         let project = nebula_vfs::Project::open(dir.path()).unwrap();
         let searcher = ContentSearcher::new();
 
-        let only_src = searcher
-            .search(&project, &SearchQuery::literal("target").include("src/**"))
-            .unwrap();
+        let only_src =
+            searcher.search(&project, &SearchQuery::literal("target").include("src/**")).unwrap();
         assert!(only_src.matches.iter().all(|m| m.path.to_string_lossy().contains("src")));
 
-        let no_tests = searcher
-            .search(&project, &SearchQuery::literal("target").exclude("tests/**"))
-            .unwrap();
+        let no_tests =
+            searcher.search(&project, &SearchQuery::literal("target").exclude("tests/**")).unwrap();
         assert!(no_tests.matches.iter().all(|m| !m.path.to_string_lossy().contains("tests")));
     }
 
@@ -554,7 +557,8 @@ mod tests {
         fs::write(dir.path().join("text.txt"), "needle\n").unwrap();
         let project = nebula_vfs::Project::open(dir.path()).unwrap();
 
-        let results = ContentSearcher::new().search(&project, &SearchQuery::literal("needle")).unwrap();
+        let results =
+            ContentSearcher::new().search(&project, &SearchQuery::literal("needle")).unwrap();
         assert!(
             results.matches.iter().all(|m| m.path.ends_with("text.txt")),
             "binary content must not reach the results pane: {:?}",
@@ -589,9 +593,8 @@ mod tests {
     #[test]
     fn buffer_search_returns_char_ranges() {
         let buffer = nebula_core::TextBuffer::from_str("héllo world, héllo again");
-        let ranges = ContentSearcher::new()
-            .search_buffer(&buffer, &SearchQuery::literal("héllo"))
-            .unwrap();
+        let ranges =
+            ContentSearcher::new().search_buffer(&buffer, &SearchQuery::literal("héllo")).unwrap();
         assert_eq!(ranges.len(), 2);
         // Char offsets, not byte offsets — é is two bytes.
         assert_eq!(ranges[0], nebula_core::Range::new(0, 5));
@@ -601,9 +604,8 @@ mod tests {
     #[test]
     fn buffer_search_terminates_on_zero_width_patterns() {
         let buffer = nebula_core::TextBuffer::from_str("abc");
-        let ranges = ContentSearcher::new()
-            .search_buffer(&buffer, &SearchQuery::regex("x*"))
-            .unwrap();
+        let ranges =
+            ContentSearcher::new().search_buffer(&buffer, &SearchQuery::regex("x*")).unwrap();
         assert!(!ranges.is_empty(), "a zero-width pattern still matches");
         assert!(ranges.len() <= 8, "and must not loop forever");
     }

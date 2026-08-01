@@ -1,0 +1,42 @@
+Nebula IDE — Proprietary Licence
+Copyright (c) 2026. All rights reserved.
+
+This software and its source code are proprietary and confidential.
+
+PERMITTED
+
+  Licensees may install and use the compiled software on machines they own or
+  control, for any purpose including commercial use, subject to a valid licence
+  token issued by the copyright holder.
+
+  Licensees may read this source code, build it, modify it for their own
+  internal use, and run those modifications on their own machines.
+
+  Licensees may write, build, distribute and sell extensions that target the
+  published WIT world, under any licence they choose. Extensions are not
+  derivative works of this software.
+
+NOT PERMITTED
+
+  Redistribution of this source code, or of binaries built from it, to any third
+  party. Sublicensing. Removal or circumvention of the licence-verification
+  mechanism. Use of the "Nebula" name or marks to identify a modified build.
+
+NO WARRANTY
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+THIRD-PARTY COMPONENTS
+
+  This software links against open-source libraries under permissive licences.
+  A complete inventory ships with each release as a CycloneDX SBOM, and the
+  policy that governs which licences are acceptable is in `deny.toml`.
+
+  The bundled DejaVu Sans Mono font is distributed under the Bitstream Vera
+  licence; see crates/nebula-render/assets/fonts/LICENSE-DejaVu.txt.

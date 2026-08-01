@@ -93,9 +93,7 @@ impl Framebuffer {
         self.pixels
             .chunks_exact(4)
             .zip(other.pixels.chunks_exact(4))
-            .filter(|(a, b)| {
-                a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > tolerance)
-            })
+            .filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > tolerance))
             .count()
     }
 

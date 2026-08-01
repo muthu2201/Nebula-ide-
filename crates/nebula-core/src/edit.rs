@@ -185,10 +185,8 @@ impl Transaction {
             // has been applied.
             let post_start = (edit.range.start as isize + shift) as usize;
             let post_end = post_start + inserted_len;
-            inverse_edits.push(Edit {
-                range: Range { start: post_start, end: post_end },
-                text: removed,
-            });
+            inverse_edits
+                .push(Edit { range: Range { start: post_start, end: post_end }, text: removed });
             changed_start = changed_start.min(post_start);
             changed_end = changed_end.max(post_end);
             shift += edit.char_delta();
@@ -356,7 +354,11 @@ mod tests {
         // "abcdef" -> delete [1,4) -> "aef"
         let t = Transaction::single(Edit::delete(Range::new(1, 4)));
         assert_eq!(t.map_offset(0, true), 0);
-        assert_eq!(t.map_offset(2, true), 1, "an offset inside deleted text collapses to its start");
+        assert_eq!(
+            t.map_offset(2, true),
+            1,
+            "an offset inside deleted text collapses to its start"
+        );
         assert_eq!(t.map_offset(4, true), 1);
         assert_eq!(t.map_offset(5, true), 2);
     }

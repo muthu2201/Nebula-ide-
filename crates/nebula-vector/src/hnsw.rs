@@ -230,14 +230,7 @@ pub struct Hnsw {
 impl Hnsw {
     /// An empty index.
     pub fn new(config: HnswConfig) -> Self {
-        Self {
-            rng: config.seed | 1,
-            config,
-            nodes: Vec::new(),
-            entry: None,
-            max_layer: 0,
-            live: 0,
-        }
+        Self { rng: config.seed | 1, config, nodes: Vec::new(), entry: None, max_layer: 0, live: 0 }
     }
 
     /// The configuration in force.
@@ -276,12 +269,7 @@ impl Hnsw {
 
         let level = self.random_level();
         let new_index = self.nodes.len() as u32;
-        self.nodes.push(Node {
-            id,
-            vector,
-            links: vec![Vec::new(); level + 1],
-            deleted: false,
-        });
+        self.nodes.push(Node { id, vector, links: vec![Vec::new(); level + 1], deleted: false });
         self.live += 1;
 
         let Some(entry) = self.entry else {
@@ -462,12 +450,8 @@ impl Hnsw {
     /// Tombstones cost search time and memory forever; a project that has been
     /// edited for a week wants this run once rather than a full re-embed.
     pub fn compact(&mut self) -> Result<()> {
-        let live: Vec<(u64, Vec<f32>)> = self
-            .nodes
-            .iter()
-            .filter(|n| !n.deleted)
-            .map(|n| (n.id, n.vector.clone()))
-            .collect();
+        let live: Vec<(u64, Vec<f32>)> =
+            self.nodes.iter().filter(|n| !n.deleted).map(|n| (n.id, n.vector.clone())).collect();
 
         let mut rebuilt = Hnsw::new(self.config);
         for (id, vector) in live {
@@ -524,7 +508,8 @@ impl Hnsw {
     /// Walk greedily downhill on one layer until no neighbour is closer.
     fn greedy_search(&self, query: &[f32], entry: u32, layer: usize) -> u32 {
         let mut current = entry;
-        let mut current_distance = self.config.metric.distance(query, &self.nodes[current as usize].vector);
+        let mut current_distance =
+            self.config.metric.distance(query, &self.nodes[current as usize].vector);
 
         loop {
             let mut improved = false;
@@ -663,7 +648,10 @@ impl Hnsw {
             .iter()
             .map(|&neighbor| Candidate {
                 node: neighbor,
-                distance: self.config.metric.distance(&vector, &self.nodes[neighbor as usize].vector),
+                distance: self
+                    .config
+                    .metric
+                    .distance(&vector, &self.nodes[neighbor as usize].vector),
             })
             .collect();
         candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
@@ -940,10 +928,7 @@ mod tests {
         let (index, data) = build(400, 16, Metric::Cosine);
         for (i, vector) in data.iter().enumerate() {
             let results = index.search_with_ef(vector, 1, 100).unwrap();
-            assert_eq!(
-                results[0].id, i as u64,
-                "vector {i} was not reachable through the graph"
-            );
+            assert_eq!(results[0].id, i as u64, "vector {i} was not reachable through the graph");
         }
     }
 

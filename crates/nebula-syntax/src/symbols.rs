@@ -187,9 +187,10 @@ pub fn references(tree: &SyntaxTree, buffer: &TextBuffer) -> Result<Vec<Referenc
 
     let mut matches = cursor.matches(query, tree.root(), provider);
     while let Some(m) = matches.next() {
-        let is_reference = m.captures.iter().any(|c| {
-            query.capture_names()[c.index as usize].starts_with("reference.")
-        });
+        let is_reference = m
+            .captures
+            .iter()
+            .any(|c| query.capture_names()[c.index as usize].starts_with("reference."));
         if !is_reference {
             continue;
         }
@@ -268,7 +269,8 @@ pub enum Mode { Fast, Slow }
 
     #[test]
     fn python_definitions_are_extracted() {
-        let source = "class Service:\n    def start(self):\n        pass\n\ndef helper():\n    pass\n";
+        let source =
+            "class Service:\n    def start(self):\n        pass\n\ndef helper():\n    pass\n";
         let found = extract("python", source);
         let found_names = names(&found);
         assert!(found_names.contains(&"Service"), "{found_names:?}");
@@ -278,7 +280,8 @@ pub enum Mode { Fast, Slow }
 
     #[test]
     fn go_definitions_are_extracted() {
-        let source = "package main\n\ntype Server struct{}\n\nfunc (s *Server) Run() {}\n\nfunc main() {}\n";
+        let source =
+            "package main\n\ntype Server struct{}\n\nfunc (s *Server) Run() {}\n\nfunc main() {}\n";
         let found = extract("go", source);
         let found_names = names(&found);
         assert!(found_names.contains(&"Server"), "{found_names:?}");

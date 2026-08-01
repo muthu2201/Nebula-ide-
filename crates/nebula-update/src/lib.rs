@@ -84,8 +84,8 @@ pub fn verify_signature(content: &[u8], signature: &str, public_key: &str) -> Re
     let key_bytes: [u8; 32] = key_bytes
         .try_into()
         .map_err(|_| UpdateError::Manifest("signing key must be 32 bytes".to_string()))?;
-    let key = VerifyingKey::from_bytes(&key_bytes)
-        .map_err(|e| UpdateError::Manifest(e.to_string()))?;
+    let key =
+        VerifyingKey::from_bytes(&key_bytes).map_err(|e| UpdateError::Manifest(e.to_string()))?;
 
     let signature_bytes = base64::engine::general_purpose::STANDARD
         .decode(signature.trim())

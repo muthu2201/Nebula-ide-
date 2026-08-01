@@ -128,9 +128,7 @@ async fn messages(State(state): State<ServerState>, headers: HeaderMap, body: St
         }))
         .into_response(),
 
-        Behaviour::CountTokens => {
-            axum::Json(json!({ "input_tokens": 1234 })).into_response()
-        }
+        Behaviour::CountTokens => axum::Json(json!({ "input_tokens": 1234 })).into_response(),
 
         Behaviour::Stream => {
             // Deliver the stream in deliberately awkward chunks: an event split
@@ -146,11 +144,10 @@ async fn messages(State(state): State<ServerState>, headers: HeaderMap, body: St
                 "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
             ];
 
-            let stream = futures::stream::iter(
-                pieces
-                    .into_iter()
-                    .map(|piece| Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(piece))),
-            );
+            let stream =
+                futures::stream::iter(pieces.into_iter().map(|piece| {
+                    Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(piece))
+                }));
 
             Response::builder()
                 .status(StatusCode::OK)
@@ -290,10 +287,7 @@ async fn a_stream_reassembles_correctly_from_awkward_chunks() {
     }
 
     assert!(saw_start);
-    assert_eq!(
-        text, "Streaming works.",
-        "an event split across two chunks must still reassemble"
-    );
+    assert_eq!(text, "Streaming works.", "an event split across two chunks must still reassemble");
 
     let usage = final_usage.expect("the stream should report final usage");
     assert_eq!(usage.input_tokens, 15, "input tokens come from message_start");
@@ -367,10 +361,7 @@ async fn a_multi_turn_conversation_sends_the_whole_history() {
         Message::assistant("first answer"),
         Message::user("second question"),
     ];
-    provider
-        .complete(CompletionRequest::new(Model::Opus5, messages))
-        .await
-        .unwrap();
+    provider.complete(CompletionRequest::new(Model::Opus5, messages)).await.unwrap();
 
     let received = state.received.lock();
     let (body, _) = received.last().unwrap();

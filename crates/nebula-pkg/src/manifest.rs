@@ -170,9 +170,7 @@ fn is_valid_id(id: &str) -> bool {
     segments.iter().all(|segment| {
         !segment.is_empty()
             && segment.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-            && segment
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && segment.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     })
 }
 
@@ -247,8 +245,7 @@ title = "Format Document"
 
     #[test]
     fn an_overlong_description_is_rejected() {
-        let toml =
-            valid_manifest_toml().replace("Formats example files", &"x".repeat(300));
+        let toml = valid_manifest_toml().replace("Formats example files", &"x".repeat(300));
         assert!(Manifest::from_toml(&toml).is_err());
     }
 
@@ -321,10 +318,8 @@ title = "Format Document"
 
     #[test]
     fn an_unknown_capability_is_rejected_rather_than_ignored() {
-        let toml = valid_manifest_toml().replace(
-            r#""register-commands"]"#,
-            r#""register-commands", "read-your-email"]"#,
-        );
+        let toml = valid_manifest_toml()
+            .replace(r#""register-commands"]"#, r#""register-commands", "read-your-email"]"#);
         assert!(
             Manifest::from_toml(&toml).is_err(),
             "an unrecognised capability must not be silently dropped"

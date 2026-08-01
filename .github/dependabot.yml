@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request per ecosystem rather than per crate: the wgpu, winit
+      # and cosmic-text versions move together and only make sense reviewed
+      # together.
+      graphics:
+        patterns: ["wgpu*", "winit", "cosmic-text", "tiny-skia", "swash", "etagere"]
+      tree-sitter:
+        patterns: ["tree-sitter*"]
+      async:
+        patterns: ["tokio*", "futures*", "hyper*", "axum", "tower*", "reqwest"]
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

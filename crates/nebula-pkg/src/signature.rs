@@ -300,9 +300,7 @@ mod tests {
             "the signature is internally consistent"
         );
 
-        let err = signature
-            .verify_against_trusted(content, &[publisher.public()])
-            .unwrap_err();
+        let err = signature.verify_against_trusted(content, &[publisher.public()]).unwrap_err();
         assert!(
             matches!(err, SigningError::UntrustedKey(_)),
             "but it must not verify against the trusted set"

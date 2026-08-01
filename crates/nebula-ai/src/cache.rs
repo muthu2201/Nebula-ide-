@@ -125,10 +125,7 @@ impl CachePlan {
         if message_count >= 4 {
             let stable_end = message_count.saturating_sub(2);
             if breakpoints.len() < MAX_BREAKPOINTS {
-                breakpoints.push(CacheBreakpoint::Message(
-                    stable_end - 1,
-                    CacheTtl::FiveMinutes,
-                ));
+                breakpoints.push(CacheBreakpoint::Message(stable_end - 1, CacheTtl::FiveMinutes));
             }
         }
 
@@ -172,8 +169,8 @@ impl CachePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{CompletionRequest, Message};
     use crate::models::Model;
+    use crate::provider::{CompletionRequest, Message};
 
     #[test]
     fn ttls_use_the_documented_wire_values_and_multipliers() {

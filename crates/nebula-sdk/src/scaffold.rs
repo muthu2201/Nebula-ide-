@@ -213,14 +213,9 @@ mod tests {
         let project = dir.path().join("my-extension");
         create(&project, "com.example.formatter", "Example Author").unwrap();
 
-        for expected in [
-            "nebula.toml",
-            "Cargo.toml",
-            "src/lib.rs",
-            "wit/world.wit",
-            ".gitignore",
-            "README.md",
-        ] {
+        for expected in
+            ["nebula.toml", "Cargo.toml", "src/lib.rs", "wit/world.wit", ".gitignore", "README.md"]
+        {
             assert!(project.join(expected).is_file(), "{expected} was not written");
         }
         assert!(project.join("assets").is_dir());
@@ -249,9 +244,7 @@ mod tests {
 
         let manifest = Project::discover(&project).unwrap().manifest;
         assert!(!manifest.commands.is_empty());
-        assert!(
-            manifest.capabilities.contains(&nebula_wasm_host::Capability::RegisterCommands)
-        );
+        assert!(manifest.capabilities.contains(&nebula_wasm_host::Capability::RegisterCommands));
     }
 
     #[test]

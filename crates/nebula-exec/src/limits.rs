@@ -178,8 +178,10 @@ mod tests {
 
     #[test]
     fn builders_override_individual_fields() {
-        let limits =
-            ResourceLimits::default().timeout(Duration::from_secs(5)).max_output(1024).max_memory(None);
+        let limits = ResourceLimits::default()
+            .timeout(Duration::from_secs(5))
+            .max_output(1024)
+            .max_memory(None);
         assert_eq!(limits.timeout, Duration::from_secs(5));
         assert_eq!(limits.max_output_bytes, 1024);
         assert!(limits.max_memory_bytes.is_none());

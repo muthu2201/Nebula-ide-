@@ -154,8 +154,7 @@ fn hostname() -> std::io::Result<String> {
     }
     #[cfg(windows)]
     {
-        std::env::var("COMPUTERNAME")
-            .map_err(|_| std::io::Error::other("COMPUTERNAME is not set"))
+        std::env::var("COMPUTERNAME").map_err(|_| std::io::Error::other("COMPUTERNAME is not set"))
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -207,10 +206,8 @@ mod tests {
     use super::*;
 
     fn fingerprint_from(signals: &[(&str, &str)]) -> Fingerprint {
-        let mut signals: Vec<HardwareId> = signals
-            .iter()
-            .map(|(kind, value)| HardwareId::new(kind, value.as_bytes()))
-            .collect();
+        let mut signals: Vec<HardwareId> =
+            signals.iter().map(|(kind, value)| HardwareId::new(kind, value.as_bytes())).collect();
         signals.sort_by(|a, b| a.kind.cmp(&b.kind));
         Fingerprint { signals }
     }
@@ -218,10 +215,7 @@ mod tests {
     #[test]
     fn collecting_produces_several_signals() {
         let fingerprint = Fingerprint::collect();
-        assert!(
-            fingerprint.len() >= 2,
-            "too few signals to distinguish machines: {fingerprint:?}"
-        );
+        assert!(fingerprint.len() >= 2, "too few signals to distinguish machines: {fingerprint:?}");
     }
 
     #[test]
@@ -241,10 +235,7 @@ mod tests {
         let signal = HardwareId::new("hostname", b"very-distinctive-machine-name");
         let rendered = serde_json::to_string(&signal).unwrap();
 
-        assert!(
-            !rendered.contains("very-distinctive"),
-            "the raw identifier leaked: {rendered}"
-        );
+        assert!(!rendered.contains("very-distinctive"), "the raw identifier leaked: {rendered}");
         assert_eq!(signal.digest.len(), 32, "expected a 128-bit digest in hex");
     }
 

@@ -85,7 +85,9 @@ fn bench_highlight(c: &mut Criterion) {
         let end = buffer.line_start(60.min(buffer.len_lines() - 1)).unwrap();
         let range = Range::new(0, end);
         let mut highlighter = Highlighter::new();
-        b.iter(|| black_box(highlighter.highlight_range(&tree, &buffer, black_box(range)).unwrap()));
+        b.iter(|| {
+            black_box(highlighter.highlight_range(&tree, &buffer, black_box(range)).unwrap())
+        });
     });
     // Whole document: what a naive implementation would do per frame.
     group.bench_function("whole_document", |b| {

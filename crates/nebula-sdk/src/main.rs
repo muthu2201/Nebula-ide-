@@ -191,10 +191,8 @@ fn run_in_host(project: &Project, component: &[u8]) -> Result<()> {
     let granted: std::collections::BTreeSet<_> =
         project.manifest.capabilities.iter().copied().collect();
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(SdkError::Io)?;
+    let runtime =
+        tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(SdkError::Io)?;
 
     runtime.block_on(async {
         let mut instance = host
@@ -243,7 +241,10 @@ fn print_report(report: &nebula_pkg::NotarizationReport) {
             println!("{} ready to publish", style("✓").green().bold());
         }
         NotarizationVerdict::NeedsReview { reasons } => {
-            println!("{} this will be held for human review because it:", style("!").yellow().bold());
+            println!(
+                "{} this will be held for human review because it:",
+                style("!").yellow().bold()
+            );
             for reason in reasons {
                 println!("    • {reason}");
             }
@@ -262,10 +263,8 @@ fn publish(path: &PathBuf, registry: &str) -> Result<()> {
     let bytes = std::fs::read(path)?;
     let url = format!("{}/v1/publish", registry.trim_end_matches('/'));
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(SdkError::Io)?;
+    let runtime =
+        tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(SdkError::Io)?;
 
     runtime.block_on(async {
         let response = reqwest::Client::new()
@@ -287,7 +286,10 @@ fn publish(path: &PathBuf, registry: &str) -> Result<()> {
         let outcome: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
         match outcome.get("outcome").and_then(|v| v.as_str()) {
             Some("held-for-review") => {
-                println!("{} submitted, and held for review because it:", style("!").yellow().bold());
+                println!(
+                    "{} submitted, and held for review because it:",
+                    style("!").yellow().bold()
+                );
                 if let Some(reasons) = outcome.get("reasons").and_then(|v| v.as_array()) {
                     for reason in reasons {
                         println!("    • {}", reason.as_str().unwrap_or_default());

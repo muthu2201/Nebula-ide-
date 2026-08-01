@@ -212,12 +212,10 @@ impl GrammarRegistry {
         let is_typescript = matches!(language_id, "typescript" | "typescriptreact");
         let combine = |ts: Option<&'static str>, js: &'static str| -> Result<Option<Query>> {
             let source = format!("{}\n{}", js, ts.unwrap_or(""));
-            Query::new(&language, &source)
-                .map(Some)
-                .map_err(|source| SyntaxError::BadQuery {
-                    language: language_id.to_string(),
-                    source,
-                })
+            Query::new(&language, &source).map(Some).map_err(|source| SyntaxError::BadQuery {
+                language: language_id.to_string(),
+                source,
+            })
         };
 
         let highlights = if is_typescript {

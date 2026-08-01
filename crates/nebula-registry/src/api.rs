@@ -10,8 +10,8 @@ use axum::{Json, Router};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
-use crate::store::{Registry, RegistryEntry};
 use crate::RegistryError;
+use crate::store::{Registry, RegistryEntry};
 
 /// The largest package the API will accept.
 pub const MAX_UPLOAD_BYTES: usize = 64 * 1024 * 1024;
@@ -169,10 +169,7 @@ async fn download(
         StatusCode::OK,
         [
             ("content-type", "application/octet-stream".to_string()),
-            (
-                "content-disposition",
-                format!("attachment; filename=\"{id}-{version}.nbx\""),
-            ),
+            ("content-disposition", format!("attachment; filename=\"{id}-{version}.nbx\"")),
         ],
         bytes,
     )
@@ -284,14 +281,13 @@ mod tests {
         assert_eq!(listed[0].id, "com.example.thing");
         assert_eq!(listed[0].publisher, "Example Ltd");
 
-        let downloaded = reqwest::get(format!(
-            "{address}/v1/extensions/com.example.thing/1.0.0/download"
-        ))
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap();
+        let downloaded =
+            reqwest::get(format!("{address}/v1/extensions/com.example.thing/1.0.0/download"))
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap();
         assert_eq!(
             downloaded.as_ref(),
             bytes.as_slice(),
@@ -370,11 +366,10 @@ mod tests {
             reqwest::get(format!("{address}/v1/extensions")).await.unwrap().json().await.unwrap();
         assert!(listed.is_empty(), "a held version must not be listed");
 
-        let download = reqwest::get(format!(
-            "{address}/v1/extensions/com.example.runner/1.0.0/download"
-        ))
-        .await
-        .unwrap();
+        let download =
+            reqwest::get(format!("{address}/v1/extensions/com.example.runner/1.0.0/download"))
+                .await
+                .unwrap();
         assert_eq!(download.status(), 404);
     }
 

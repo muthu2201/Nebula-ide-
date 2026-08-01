@@ -109,9 +109,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Run { script, root, report, budget_ms }) => {
             run_script(config, &script, &root, report.as_deref(), budget_ms)
         }
-        Some(Command::Render { file, out, size, line }) => {
-            render(config, &file, &out, &size, line)
-        }
+        Some(Command::Render { file, out, size, line }) => render(config, &file, &out, &size, line),
         Some(Command::Doctor) => doctor(config),
         Some(Command::Config { write }) => print_config(&config, write, cli.config.as_deref()),
         Some(Command::License { file }) => check_license(file.as_deref()),
@@ -422,9 +420,12 @@ fn yes_no(value: bool) -> &'static str {
     if value { "enforced" } else { "unavailable on this kernel" }
 }
 
-
 /// Print or write the effective configuration.
-fn print_config(config: &Config, write: bool, explicit: Option<&std::path::Path>) -> anyhow::Result<()> {
+fn print_config(
+    config: &Config,
+    write: bool,
+    explicit: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
     if !write {
         println!("{}", serde_json::to_string_pretty(config)?);
         return Ok(());
@@ -432,7 +433,10 @@ fn print_config(config: &Config, write: bool, explicit: Option<&std::path::Path>
 
     let path = explicit.map(PathBuf::from).unwrap_or_else(Config::path);
     if path.exists() {
-        anyhow::bail!("{} already exists; delete it first if you meant to replace it", path.display());
+        anyhow::bail!(
+            "{} already exists; delete it first if you meant to replace it",
+            path.display()
+        );
     }
     config.save_to(&path)?;
     println!("{} {}", style("Wrote").green().bold(), path.display());
@@ -441,9 +445,7 @@ fn print_config(config: &Config, write: bool, explicit: Option<&std::path::Path>
 
 /// Validate a licence file against this machine.
 fn check_license(file: Option<&std::path::Path>) -> anyhow::Result<()> {
-    let path = file
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Config::directory().join("license.json"));
+    let path = file.map(PathBuf::from).unwrap_or_else(|| Config::directory().join("license.json"));
 
     if !path.exists() {
         println!("{} no licence at {}", style("Unlicensed:").yellow().bold(), path.display());
@@ -538,11 +540,8 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
         let script = dir.path().join("edit.nbs");
-        std::fs::write(
-            &script,
-            "open main.rs\nend\ntype // trailing\nsave\nexpect-saved\nframe\n",
-        )
-        .unwrap();
+        std::fs::write(&script, "open main.rs\nend\ntype // trailing\nsave\nexpect-saved\nframe\n")
+            .unwrap();
 
         let mut config = Config::default();
         config.force_cpu_renderer = true;

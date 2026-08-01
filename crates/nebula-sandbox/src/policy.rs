@@ -110,7 +110,10 @@ impl Policy {
     /// checks; it is not itself an enforcement mechanism.
     pub fn allows_read(&self, path: &Path) -> bool {
         let path = crate::resolve(path).unwrap_or_else(|_| path.to_path_buf());
-        self.read_paths.iter().chain(self.write_paths.iter()).any(|allowed| path.starts_with(allowed))
+        self.read_paths
+            .iter()
+            .chain(self.write_paths.iter())
+            .any(|allowed| path.starts_with(allowed))
     }
 
     /// Whether `path` is writable under this policy.
@@ -289,7 +292,10 @@ mod tests {
     fn duplicate_grants_are_collapsed() {
         let policy =
             Policy::builder().read("/usr").read("/usr").write("/tmp").write("/tmp").build();
-        assert_eq!(policy.read_paths.iter().filter(|p| p.as_path() == Path::new("/usr")).count(), 1);
+        assert_eq!(
+            policy.read_paths.iter().filter(|p| p.as_path() == Path::new("/usr")).count(),
+            1
+        );
         assert_eq!(policy.write_paths.len(), 1);
     }
 

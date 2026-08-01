@@ -121,8 +121,10 @@ impl App {
         // a pixel.
         let char_width = (config.font_size * 0.6).round();
 
-        let mut view =
-            EditorView::new(theme, Layout::new(width, height, line_height, char_width, total_lines));
+        let mut view = EditorView::new(
+            theme,
+            Layout::new(width, height, line_height, char_width, total_lines),
+        );
         view.font_size = config.font_size;
         view.show_line_numbers = config.line_numbers;
         view.highlight_current_line = config.highlight_current_line;
@@ -297,7 +299,8 @@ impl App {
         }
 
         let mut status = nebula_ui::view::StatusLine::for_document(self.workspace.document());
-        if let Some(message) = self.message.as_ref().filter(|(_, at)| at.elapsed() < MESSAGE_TIMEOUT)
+        if let Some(message) =
+            self.message.as_ref().filter(|(_, at)| at.elapsed() < MESSAGE_TIMEOUT)
         {
             // A message displaces the language indicator rather than adding a
             // fourth field: the status bar has a fixed width and something has
@@ -450,7 +453,10 @@ mod tests {
         app.act(Action::Move(Motion::DocumentEnd), false);
         typed(&mut app, "\nfn second() {}");
 
-        assert!(!app.workspace.active().tree_is_current(), "the parse happened on the keystroke path");
+        assert!(
+            !app.workspace.active().tree_is_current(),
+            "the parse happened on the keystroke path"
+        );
     }
 
     #[test]
@@ -588,8 +594,7 @@ mod tests {
         // exactly the property that regresses silently.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("huge.rs");
-        let text: String =
-            (0..200_000).map(|i| format!("fn f{i}() -> u32 {{ {i} }}\n")).collect();
+        let text: String = (0..200_000).map(|i| format!("fn f{i}() -> u32 {{ {i} }}\n")).collect();
         std::fs::write(&path, text).unwrap();
 
         let mut app = app();

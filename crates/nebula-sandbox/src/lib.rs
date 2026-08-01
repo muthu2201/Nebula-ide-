@@ -224,10 +224,8 @@ mod tests {
         assert!(full.is_full());
         assert!(full.is_confined());
 
-        let partial = Enforcement::Partial {
-            mechanism: "Landlock".into(),
-            missing: vec!["network".into()],
-        };
+        let partial =
+            Enforcement::Partial { mechanism: "Landlock".into(), missing: vec!["network".into()] };
         assert!(!partial.is_full());
         assert!(partial.is_confined());
 

@@ -191,14 +191,9 @@ impl ModelProvider for AnthropicProvider {
         let key = self.key().await?;
         let body = self.build_body(&request, false);
 
-        let response = self
-            .post("/v1/messages", key.expose())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiError::Network {
-                provider: "anthropic".to_string(),
-                message: e.to_string(),
+        let response =
+            self.post("/v1/messages", key.expose()).json(&body).send().await.map_err(|e| {
+                AiError::Network { provider: "anthropic".to_string(), message: e.to_string() }
             })?;
 
         if !response.status().is_success() {
@@ -283,15 +278,10 @@ impl ModelProvider for AnthropicProvider {
             object.remove("stop_sequences");
         }
 
-        let response = self
-            .post("/v1/messages/count_tokens", key.expose())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiError::Network {
-                provider: "anthropic".to_string(),
-                message: e.to_string(),
-            })?;
+        let response =
+            self.post("/v1/messages/count_tokens", key.expose()).json(&body).send().await.map_err(
+                |e| AiError::Network { provider: "anthropic".to_string(), message: e.to_string() },
+            )?;
 
         if !response.status().is_success() {
             return Err(self.error_from(response).await);
@@ -302,14 +292,12 @@ impl ModelProvider for AnthropicProvider {
             detail: format!("response was not JSON: {e}"),
         })?;
 
-        value
-            .get("input_tokens")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .ok_or_else(|| AiError::Protocol {
+        value.get("input_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).ok_or_else(|| {
+            AiError::Protocol {
                 provider: "anthropic".to_string(),
                 detail: "count_tokens response had no input_tokens".to_string(),
-            })
+            }
+        })
     }
 
     async fn is_configured(&self) -> bool {
@@ -319,8 +307,11 @@ impl ModelProvider for AnthropicProvider {
 
 /// Encode one message for the wire.
 fn encode_message(message: &Message) -> Value {
-    let mut content: Vec<Value> =
-        message.content.iter().map(|block| serde_json::to_value(block).unwrap_or(json!({}))).collect();
+    let mut content: Vec<Value> = message
+        .content
+        .iter()
+        .map(|block| serde_json::to_value(block).unwrap_or(json!({})))
+        .collect();
 
     // A cache breakpoint attaches to the *last* block of the message, marking
     // everything up to and including it as cacheable.
@@ -348,10 +339,7 @@ fn parse_response(value: &Value) -> Result<CompletionResponse> {
         .map(|blocks| blocks.iter().filter_map(parse_content_block).collect())
         .unwrap_or_default();
 
-    let stop_reason = value
-        .get("stop_reason")
-        .and_then(|v| v.as_str())
-        .and_then(parse_stop_reason);
+    let stop_reason = value.get("stop_reason").and_then(|v| v.as_str()).and_then(parse_stop_reason);
 
     Ok(CompletionResponse {
         content,
@@ -363,9 +351,7 @@ fn parse_response(value: &Value) -> Result<CompletionResponse> {
 
 fn parse_content_block(value: &Value) -> Option<ContentBlock> {
     match value.get("type")?.as_str()? {
-        "text" => Some(ContentBlock::Text {
-            text: value.get("text")?.as_str()?.to_string(),
-        }),
+        "text" => Some(ContentBlock::Text { text: value.get("text")?.as_str()?.to_string() }),
         "tool_use" => Some(ContentBlock::ToolUse {
             id: value.get("id")?.as_str()?.to_string(),
             name: value.get("name")?.as_str()?.to_string(),
@@ -447,11 +433,7 @@ fn parse_sse_event(event: &str, usage: &mut Usage) -> Vec<StreamEvent> {
             if let Some(message) = value.get("message") {
                 *usage = parse_usage(message.get("usage"));
                 return vec![StreamEvent::Start {
-                    model: message
-                        .get("model")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    model: message.get("model").and_then(|m| m.as_str()).unwrap_or("").to_string(),
                 }];
             }
             Vec::new()
@@ -644,8 +626,8 @@ mod tests {
     #[test]
     fn max_tokens_is_clamped_to_the_models_ceiling() {
         let provider = provider_with(DEFAULT_BASE_URL);
-        let request = CompletionRequest::new(Model::Haiku45, vec![Message::user("hi")])
-            .max_tokens(999_999);
+        let request =
+            CompletionRequest::new(Model::Haiku45, vec![Message::user("hi")]).max_tokens(999_999);
         assert_eq!(
             provider.build_body(&request, false)["max_tokens"],
             Model::Haiku45.info().max_output
@@ -668,8 +650,8 @@ mod tests {
     #[test]
     fn caching_can_be_turned_off() {
         let provider = provider_with(DEFAULT_BASE_URL);
-        let mut request = CompletionRequest::new(Model::Opus5, vec![Message::user("hi")])
-            .system("system prompt");
+        let mut request =
+            CompletionRequest::new(Model::Opus5, vec![Message::user("hi")]).system("system prompt");
         request.cache_system = None;
 
         let body = provider.build_body(&request, false);
@@ -679,12 +661,9 @@ mod tests {
     #[test]
     fn a_message_breakpoint_attaches_to_its_last_block() {
         let provider = provider_with(DEFAULT_BASE_URL);
-        let messages = vec![
-            Message::user("first").cached(CacheTtl::OneHour),
-            Message::assistant("second"),
-        ];
-        let body =
-            provider.build_body(&CompletionRequest::new(Model::Opus5, messages), false);
+        let messages =
+            vec![Message::user("first").cached(CacheTtl::OneHour), Message::assistant("second")];
+        let body = provider.build_body(&CompletionRequest::new(Model::Opus5, messages), false);
 
         assert_eq!(body["messages"][0]["content"][0]["cache_control"]["ttl"], "1h");
         assert!(body["messages"][1]["content"][0].get("cache_control").is_none());
@@ -946,7 +925,9 @@ data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"outpu
             r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"answer"}}"#,
         ]);
 
-        assert!(matches!(&events[0], StreamEvent::ThinkingDelta { thinking } if thinking == "considering"));
+        assert!(
+            matches!(&events[0], StreamEvent::ThinkingDelta { thinking } if thinking == "considering")
+        );
         assert!(matches!(&events[1], StreamEvent::TextDelta { text } if text == "answer"));
     }
 

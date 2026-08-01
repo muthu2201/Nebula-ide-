@@ -109,11 +109,7 @@ impl History {
 
     /// A history with a custom entry cap and grouping interval.
     pub fn with_config(capacity: usize, group_interval: Duration) -> Self {
-        Self {
-            capacity: capacity.max(1),
-            group_interval,
-            ..Self::new()
-        }
+        Self { capacity: capacity.max(1), group_interval, ..Self::new() }
     }
 
     /// Record an applied transaction.
@@ -410,7 +406,13 @@ mod tests {
         for i in 0..10 {
             let t = Transaction::single(Edit::insert(i, "x"));
             let res = t.apply(&mut buffer).unwrap();
-            history.record(t, res.inverse, SelectionSet::caret(i), SelectionSet::caret(i + 1), false);
+            history.record(
+                t,
+                res.inverse,
+                SelectionSet::caret(i),
+                SelectionSet::caret(i + 1),
+                false,
+            );
         }
         assert_eq!(history.undo_depth(), 4);
     }

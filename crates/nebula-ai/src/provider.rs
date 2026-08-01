@@ -121,11 +121,7 @@ impl Message {
 
     /// All text in this message, concatenated.
     pub fn text(&self) -> String {
-        self.content
-            .iter()
-            .filter_map(ContentBlock::as_text)
-            .collect::<Vec<_>>()
-            .join("")
+        self.content.iter().filter_map(ContentBlock::as_text).collect::<Vec<_>>().join("")
     }
 
     /// The tool calls this message contains.
@@ -312,11 +308,7 @@ pub struct CompletionResponse {
 impl CompletionResponse {
     /// All text content concatenated.
     pub fn text(&self) -> String {
-        self.content
-            .iter()
-            .filter_map(ContentBlock::as_text)
-            .collect::<Vec<_>>()
-            .join("")
+        self.content.iter().filter_map(ContentBlock::as_text).collect::<Vec<_>>().join("")
     }
 
     /// The tool calls the model made.

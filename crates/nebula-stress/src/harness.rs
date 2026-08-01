@@ -118,10 +118,7 @@ pub fn run(options: &Options) -> Result<Report> {
     report.phases.push(indexing(&fixture)?);
 
     if options.skip_programs {
-        report.phases.push(PhaseReport::skipped(
-            "programs",
-            "--skip-programs was given",
-        ));
+        report.phases.push(PhaseReport::skipped("programs", "--skip-programs was given"));
     } else {
         let (phase, runs) = programs(&fixture, options)?;
         report.programs = runs;
@@ -316,10 +313,7 @@ fn indexing(fixture: &Fixture) -> Result<PhaseReport> {
     phase.measure("content-search", search_start.elapsed(), None);
     phase.note(format!("{} matches for `pub fn`", results.matches.len()));
 
-    anyhow::ensure!(
-        !results.matches.is_empty(),
-        "searching a tree full of Rust found no `pub fn`"
-    );
+    anyhow::ensure!(!results.matches.is_empty(), "searching a tree full of Rust found no `pub fn`");
 
     // The vector index, over one embedding per source file.
     let embed_start = Instant::now();
@@ -396,7 +390,10 @@ fn programs(fixture: &Fixture, options: &Options) -> Result<(PhaseReport, Vec<Pr
 struct ToolchainMissing;
 
 /// Build and run one program, under the sandbox.
-fn run_program(root: &Path, program: &Program) -> std::result::Result<ProgramRun, ToolchainMissing> {
+fn run_program(
+    root: &Path,
+    program: &Program,
+) -> std::result::Result<ProgramRun, ToolchainMissing> {
     if which(program.requires).is_none() {
         return Err(ToolchainMissing);
     }

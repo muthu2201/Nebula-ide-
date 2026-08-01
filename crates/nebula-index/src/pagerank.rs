@@ -224,8 +224,7 @@ mod tests {
 
         let uniform = graph.rank_uniform();
         // Teleport only onto node 2, which feeds node 3.
-        let personalized =
-            graph.rank(&[0.0, 0.0, 1.0, 0.0], &PageRankConfig::default());
+        let personalized = graph.rank(&[0.0, 0.0, 1.0, 0.0], &PageRankConfig::default());
 
         assert!(
             personalized[3] > uniform[3],
@@ -314,8 +313,10 @@ mod tests {
 
         // A tight iteration cap and a loose tolerance must still converge to the
         // symmetric answer.
-        let ranks =
-            graph.rank(&[], &PageRankConfig { max_iterations: 5, tolerance: 1e-3, ..Default::default() });
+        let ranks = graph.rank(
+            &[],
+            &PageRankConfig { max_iterations: 5, tolerance: 1e-3, ..Default::default() },
+        );
         for rank in &ranks {
             assert!((rank - 1.0 / 3.0).abs() < 0.01, "expected ~0.333, got {rank}");
         }

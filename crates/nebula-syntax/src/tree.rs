@@ -313,16 +313,12 @@ mod tests {
         let (mut tree, before) = rust_tree(source);
 
         let mut after = before.clone();
-        let transaction = Transaction::single(Edit::insert(
-            source.find("1").unwrap(),
-            "compute(",
-        ));
+        let transaction = Transaction::single(Edit::insert(source.find("1").unwrap(), "compute("));
         transaction.apply(&mut after).unwrap();
         tree.apply(&before, &after, &transaction, 1).unwrap();
 
         let registry = GrammarRegistry::new();
-        let fresh =
-            SyntaxTree::parse(registry.get("rust").unwrap(), &after, 1).unwrap();
+        let fresh = SyntaxTree::parse(registry.get("rust").unwrap(), &after, 1).unwrap();
         assert_eq!(
             tree.to_sexp(),
             fresh.to_sexp(),

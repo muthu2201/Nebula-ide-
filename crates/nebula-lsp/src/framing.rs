@@ -152,8 +152,7 @@ mod tests {
         bytes.extend(encode_message(r#"{"id":3}"#));
         decoder.feed(&bytes);
 
-        let ids: Vec<String> =
-            std::iter::from_fn(|| decoder.next_message().unwrap()).collect();
+        let ids: Vec<String> = std::iter::from_fn(|| decoder.next_message().unwrap()).collect();
         assert_eq!(ids, vec![r#"{"id":1}"#, r#"{"id":2}"#, r#"{"id":3}"#]);
     }
 

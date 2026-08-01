@@ -90,9 +90,9 @@ impl Config {
         let base = std::env::var_os("APPDATA").map(PathBuf::from);
 
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let base = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config"))
-        });
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")));
 
         base.unwrap_or_else(|| PathBuf::from(".")).join("nebula")
     }
@@ -189,9 +189,8 @@ impl Config {
 
                 match std::fs::read_to_string(&path)
                     .map_err(|e| e.to_string())
-                    .and_then(|text| {
-                        nebula_ui::Theme::from_json(&text).map_err(|e| e.to_string())
-                    }) {
+                    .and_then(|text| nebula_ui::Theme::from_json(&text).map_err(|e| e.to_string()))
+                {
                     Ok(theme) => (theme, None),
                     Err(message) => (
                         nebula_ui::Theme::dark(),

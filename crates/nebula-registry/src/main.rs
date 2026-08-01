@@ -31,9 +31,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new(&args.log))
-        .init();
+    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::new(&args.log)).init();
 
     let publishers: Vec<Publisher> =
         serde_json::from_str(&std::fs::read_to_string(&args.publishers)?)?;
@@ -55,9 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
     tracing::info!(address = %listener.local_addr()?, "registry listening");
 
-    axum::serve(listener, router(registry))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(listener, router(registry)).with_graceful_shutdown(shutdown_signal()).await?;
     Ok(())
 }
 

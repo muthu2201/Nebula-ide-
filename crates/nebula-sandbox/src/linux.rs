@@ -105,7 +105,8 @@ pub fn apply(policy: &Policy) -> Result<Enforcement> {
         }
         RulesetStatus::FullyEnforced => Ok(Enforcement::Partial { mechanism, missing }),
         RulesetStatus::PartiallyEnforced => {
-            missing.push("some filesystem access rights (kernel ABI is older than requested)".into());
+            missing
+                .push("some filesystem access rights (kernel ABI is older than requested)".into());
             Ok(Enforcement::Partial { mechanism, missing })
         }
         RulesetStatus::NotEnforced => Ok(Enforcement::Unsupported {
@@ -195,8 +196,8 @@ fn apply_landlock(policy: &Policy, abi: ABI) -> Result<RulesetStatus> {
 /// update should fail that one call and carry on compiling, not die on SIGSYS.
 fn deny_network_syscalls() -> std::result::Result<(), String> {
     use seccompiler::{
-        BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition,
-        SeccompFilter, SeccompRule,
+        BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter,
+        SeccompRule,
     };
 
     let arch = current_target_arch()?;

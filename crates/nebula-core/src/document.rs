@@ -202,7 +202,11 @@ impl Document {
     /// Apply a transaction, recording it in history.
     ///
     /// `groupable` should be true only for plain typing; see [`History::record`].
-    pub fn apply(&mut self, transaction: Transaction, groupable: bool) -> Result<TransactionResult> {
+    pub fn apply(
+        &mut self,
+        transaction: Transaction,
+        groupable: bool,
+    ) -> Result<TransactionResult> {
         if self.meta.read_only {
             return Err(CoreError::Decode("document is read-only".into()));
         }
@@ -329,10 +333,8 @@ impl Document {
     /// This is recorded as a single non-groupable undo step so a reload can be
     /// undone if it was not what the user wanted.
     pub fn reload(&mut self, text: &str) -> Result<TransactionResult> {
-        let transaction = Transaction::single(Edit::replace(
-            Range::new(0, self.buffer.len_chars()),
-            text,
-        ));
+        let transaction =
+            Transaction::single(Edit::replace(Range::new(0, self.buffer.len_chars()), text));
         self.apply(transaction, false)
     }
 

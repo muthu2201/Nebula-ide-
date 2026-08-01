@@ -39,7 +39,7 @@ pub use audit::{AuditEntry, AuditLog, AuditOutcome};
 pub use capability::{Capability, Grant, GrantSet};
 pub use injection::{InjectionFinding, InjectionScanner, Severity};
 pub use loop_::{Agent, AgentConfig, AgentEvent, TurnResult};
-pub use tools::{Tool, ToolContext, ToolRegistry, ToolOutcome};
+pub use tools::{Tool, ToolContext, ToolOutcome, ToolRegistry};
 
 /// Errors from the agent layer.
 #[derive(Debug, thiserror::Error)]

@@ -26,8 +26,8 @@ use cosmic_text::{
 use parking_lot::Mutex;
 use tiny_skia::Pixmap;
 
-use crate::scene::{Rect, TextRun};
 use crate::Result;
+use crate::scene::{Rect, TextRun};
 
 /// The bundled regular face.
 pub const BUNDLED_REGULAR: &[u8] = include_bytes!("../assets/fonts/DejaVuSansMono.ttf");
@@ -338,9 +338,8 @@ impl GlyphAtlas {
         }
         // A one-pixel gutter, or bilinear sampling bleeds a neighbour's coverage
         // into a glyph's edge.
-        let allocation = self
-            .allocator
-            .allocate(etagere::size2(width as i32 + 2, height as i32 + 2))?;
+        let allocation =
+            self.allocator.allocate(etagere::size2(width as i32 + 2, height as i32 + 2))?;
         self.slots.insert(key, allocation.rectangle);
         Some(allocation.rectangle)
     }
@@ -443,11 +442,7 @@ mod tests {
 
         assert_eq!(shaped.index_at(-100.0), 0, "before the line clamps to the start");
         assert_eq!(shaped.index_at(0.0), 0);
-        assert_eq!(
-            shaped.index_at(advance * 3.0),
-            3,
-            "a click on a boundary lands on it"
-        );
+        assert_eq!(shaped.index_at(advance * 3.0), 3, "a click on a boundary lands on it");
         assert_eq!(
             shaped.index_at(advance * 2.6),
             3,

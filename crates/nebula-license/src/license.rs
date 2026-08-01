@@ -198,8 +198,8 @@ impl Validator {
         let bytes: [u8; 32] = bytes
             .try_into()
             .map_err(|_| LicenseError::Malformed("issuer key must be 32 bytes".to_string()))?;
-        let issuer = VerifyingKey::from_bytes(&bytes)
-            .map_err(|e| LicenseError::Malformed(e.to_string()))?;
+        let issuer =
+            VerifyingKey::from_bytes(&bytes).map_err(|e| LicenseError::Malformed(e.to_string()))?;
         Ok(Self { issuer })
     }
 
@@ -251,10 +251,7 @@ impl Validator {
 
         if now < expiry {
             let days = (expiry - now).whole_days();
-            return LicenseStatus::Valid {
-                plan: license.claims.plan,
-                days_remaining: Some(days),
-            };
+            return LicenseStatus::Valid { plan: license.claims.plan, days_remaining: Some(days) };
         }
 
         let grace_end = expiry + time::Duration::days(license.claims.grace_days as i64);
@@ -281,8 +278,8 @@ impl Validator {
             }
             Err(e) => return Err(LicenseError::Io(e)),
         };
-        let license: License = serde_json::from_str(&text)
-            .map_err(|e| LicenseError::Malformed(e.to_string()))?;
+        let license: License =
+            serde_json::from_str(&text).map_err(|e| LicenseError::Malformed(e.to_string()))?;
         Ok(self.validate(&license, machine))
     }
 }
@@ -293,7 +290,8 @@ impl Validator {
 /// replaced at release time by the build pipeline; the value here is a
 /// development key whose private half is in the repository's test fixtures, so
 /// a development build cannot validate a production licence and vice versa.
-pub const PRODUCTION_ISSUER_KEY: &str = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29";
+pub const PRODUCTION_ISSUER_KEY: &str =
+    "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29";
 
 /// Issues licences. Used by the licensing service, and by tests.
 ///

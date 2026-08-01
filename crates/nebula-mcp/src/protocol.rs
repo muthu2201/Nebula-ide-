@@ -48,9 +48,7 @@ impl JsonRpcRequest {
         let params = self.params.get_or_insert_with(|| serde_json::json!({}));
         if let Some(object) = params.as_object_mut() {
             let existing = object.entry("_meta").or_insert_with(|| serde_json::json!({}));
-            if let (Some(existing), Some(incoming)) =
-                (existing.as_object_mut(), meta.as_object())
-            {
+            if let (Some(existing), Some(incoming)) = (existing.as_object_mut(), meta.as_object()) {
                 for (key, value) in incoming {
                     existing.insert(key.clone(), value.clone());
                 }
@@ -236,11 +234,7 @@ pub struct ToolResult {
 impl ToolResult {
     /// All text content concatenated, which is what goes into the transcript.
     pub fn text(&self) -> String {
-        self.content
-            .iter()
-            .filter_map(Content::as_text)
-            .collect::<Vec<_>>()
-            .join("\n")
+        self.content.iter().filter_map(Content::as_text).collect::<Vec<_>>().join("\n")
     }
 }
 
@@ -321,17 +315,14 @@ mod tests {
 
     #[test]
     fn meta_can_be_attached_to_a_request_with_no_params() {
-        let request =
-            JsonRpcRequest::new(1, "tools/list").with_meta(serde_json::json!({ "a": 1 }));
+        let request = JsonRpcRequest::new(1, "tools/list").with_meta(serde_json::json!({ "a": 1 }));
         assert_eq!(request.params.unwrap()["_meta"]["a"], 1);
     }
 
     #[test]
     fn responses_round_trip() {
-        let response = JsonRpcResponse::success(
-            serde_json::json!(7),
-            serde_json::json!({ "tools": [] }),
-        );
+        let response =
+            JsonRpcResponse::success(serde_json::json!(7), serde_json::json!({ "tools": [] }));
         let text = serde_json::to_string(&response).unwrap();
         let parsed: JsonRpcResponse = serde_json::from_str(&text).unwrap();
         assert_eq!(parsed, response);

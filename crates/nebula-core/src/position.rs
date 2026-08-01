@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 /// `column` counts **characters**, not bytes and not grapheme clusters. The LSP
 /// layer converts to UTF-16 code units at the boundary; the renderer converts to
 /// grapheme clusters for cursor movement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 pub struct Position {
     /// Zero-based line index.
     pub line: usize,
@@ -44,7 +46,9 @@ impl std::fmt::Display for Position {
 /// Ranges are always normalised so that `start <= end`; use [`Range::new`],
 /// which sorts its arguments, rather than constructing the struct literally when
 /// the order is not statically known.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 pub struct Range {
     /// Inclusive start, in char offsets.
     pub start: usize,
@@ -56,11 +60,7 @@ impl Range {
     /// Construct a range, sorting the endpoints so the result is never inverted.
     #[inline]
     pub fn new(a: usize, b: usize) -> Self {
-        if a <= b {
-            Self { start: a, end: b }
-        } else {
-            Self { start: b, end: a }
-        }
+        if a <= b { Self { start: a, end: b } } else { Self { start: b, end: a } }
     }
 
     /// An empty range at `offset`.
@@ -162,10 +162,7 @@ mod tests {
     #[test]
     fn intersection_of_disjoint_ranges_is_none() {
         assert_eq!(Range::new(0, 3).intersection(&Range::new(7, 9)), None);
-        assert_eq!(
-            Range::new(0, 8).intersection(&Range::new(4, 12)),
-            Some(Range::new(4, 8))
-        );
+        assert_eq!(Range::new(0, 8).intersection(&Range::new(4, 12)), Some(Range::new(4, 8)));
     }
 
     #[test]

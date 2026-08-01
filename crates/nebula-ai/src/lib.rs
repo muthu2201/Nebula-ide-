@@ -163,8 +163,10 @@ mod tests {
         };
         assert!(!bad_request.is_retryable(), "retrying a malformed request wastes quota");
 
-        assert!(AiError::Network { provider: "anthropic".into(), message: "reset".into() }
-            .is_retryable());
+        assert!(
+            AiError::Network { provider: "anthropic".into(), message: "reset".into() }
+                .is_retryable()
+        );
     }
 
     #[test]

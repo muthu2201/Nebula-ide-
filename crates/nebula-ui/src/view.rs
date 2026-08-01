@@ -59,11 +59,7 @@ impl StatusLine {
             format!("{}:{}", position.line + 1, position.column + 1)
         };
 
-        StatusLine {
-            left,
-            centre: document.language().unwrap_or("plain text").to_string(),
-            right,
-        }
+        StatusLine { left, centre: document.language().unwrap_or("plain text").to_string(), right }
     }
 }
 
@@ -150,8 +146,7 @@ impl EditorView {
         let lines = self.viewport.visible_range(buffer);
         let spans = self.highlight_spans(document, tree, &lines)?;
 
-        let caret_line =
-            buffer.offset_to_line(document.selections().primary().head).unwrap_or(0);
+        let caret_line = buffer.offset_to_line(document.selections().primary().head).unwrap_or(0);
 
         // Chrome first, so text is painted over it rather than under it.
         self.draw_gutter_background(&mut scene);
@@ -499,7 +494,8 @@ mod tests {
         let mut view = view();
         let a = view.render(&small, None, 1.0).unwrap();
 
-        let mut view = EditorView::new(Theme::dark(), Layout::new(800.0, 600.0, 16.0, 8.0, 200_000));
+        let mut view =
+            EditorView::new(Theme::dark(), Layout::new(800.0, 600.0, 16.0, 8.0, 200_000));
         let b = view.render(&huge, None, 1.0).unwrap();
 
         // The gutter is wider for six-digit line numbers, so the counts are not
@@ -565,8 +561,7 @@ mod tests {
         document.add_cursor(8);
 
         let scene = view.render(&document, None, 1.0).unwrap();
-        let carets =
-            quads(&scene).into_iter().filter(|q| q.color == view.theme.ui.cursor).count();
+        let carets = quads(&scene).into_iter().filter(|q| q.color == view.theme.ui.cursor).count();
         assert_eq!(carets, 3);
     }
 
@@ -603,10 +598,8 @@ mod tests {
         document.set_selections(SelectionSet::single(Selection::new(1, 10)));
 
         let scene = view.render(&document, None, 1.0).unwrap();
-        let bands: Vec<&Quad> = quads(&scene)
-            .into_iter()
-            .filter(|q| q.color == view.theme.ui.selection)
-            .collect();
+        let bands: Vec<&Quad> =
+            quads(&scene).into_iter().filter(|q| q.color == view.theme.ui.selection).collect();
         assert_eq!(bands.len(), 3, "one band per covered line");
 
         // Each band sits on its own row.
@@ -622,10 +615,7 @@ mod tests {
         document.set_selections(SelectionSet::single(Selection::new(0, 4)));
 
         let scene = view.render(&document, None, 1.0).unwrap();
-        let first = quads(&scene)
-            .into_iter()
-            .find(|q| q.color == view.theme.ui.selection)
-            .unwrap();
+        let first = quads(&scene).into_iter().find(|q| q.color == view.theme.ui.selection).unwrap();
         // "ab" is two columns; the band is three, the extra one being the
         // newline the selection swallowed.
         assert_eq!(first.rect.width, 3.0 * view.layout.char_width);
@@ -715,10 +705,8 @@ mod tests {
         let document = Document::from_str("fn main() {}");
         let scene = view.render(&document, None, 1.0).unwrap();
 
-        let body: Vec<&TextRun> = texts(&scene)
-            .into_iter()
-            .filter(|run| run.text.contains("fn main"))
-            .collect();
+        let body: Vec<&TextRun> =
+            texts(&scene).into_iter().filter(|run| run.text.contains("fn main")).collect();
         assert!(!body.is_empty());
         for run in body {
             assert_eq!(run.color, view.theme.ui.foreground);

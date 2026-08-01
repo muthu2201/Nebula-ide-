@@ -61,10 +61,7 @@ impl Rect {
 
     /// Whether `point` is inside.
     pub fn contains(&self, point: Point) -> bool {
-        point.x >= self.x
-            && point.x < self.right()
-            && point.y >= self.y
-            && point.y < self.bottom()
+        point.x >= self.x && point.x < self.right() && point.y >= self.y && point.y < self.bottom()
     }
 
     /// Whether two rectangles overlap.
@@ -457,9 +454,12 @@ mod tests {
     #[test]
     fn visible_primitives_are_kept_in_paint_order() {
         let mut scene = Scene::new(100.0, 100.0, 1.0);
-        scene
-            .quad(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0), Color::WHITE))
-            .text(TextRun::new(Point::new(1.0, 8.0), "hi", Color::BLACK, 12.0));
+        scene.quad(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0), Color::WHITE)).text(TextRun::new(
+            Point::new(1.0, 8.0),
+            "hi",
+            Color::BLACK,
+            12.0,
+        ));
 
         assert_eq!(scene.len(), 2);
         assert!(matches!(scene.primitives[0], Primitive::Quad(_)));

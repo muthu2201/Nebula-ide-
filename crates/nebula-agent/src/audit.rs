@@ -74,9 +74,7 @@ impl AuditEntry {
         hasher.update(self.action.as_bytes());
         // Serialising through serde_json gives a canonical form for the value.
         hasher.update(self.detail.to_string().as_bytes());
-        hasher.update(
-            serde_json::to_string(&self.outcome).unwrap_or_default().as_bytes(),
-        );
+        hasher.update(serde_json::to_string(&self.outcome).unwrap_or_default().as_bytes());
         hasher.update(self.previous_hash.as_bytes());
         hasher.finalize().to_hex().to_string()
     }
@@ -125,7 +123,10 @@ impl AuditLog {
                     continue;
                 }
                 let entry: AuditEntry = serde_json::from_str(line).map_err(|e| {
-                    AgentError::Audit(format!("line {} of the audit log is corrupt: {e}", index + 1))
+                    AgentError::Audit(format!(
+                        "line {} of the audit log is corrupt: {e}",
+                        index + 1
+                    ))
                 })?;
                 entries.push(entry);
             }
@@ -256,7 +257,11 @@ impl AuditLog {
     /// remote log — is what turns tamper-evidence into something an attacker
     /// with local write access cannot defeat.
     pub fn head_hash(&self) -> String {
-        self.entries.read().last().map(|e| e.hash.clone()).unwrap_or_else(|| GENESIS_HASH.to_string())
+        self.entries
+            .read()
+            .last()
+            .map(|e| e.hash.clone())
+            .unwrap_or_else(|| GENESIS_HASH.to_string())
     }
 }
 
@@ -440,10 +445,7 @@ mod tests {
         std::fs::write(&path, lines.join("\n") + "\n").unwrap();
 
         let reloaded = AuditLog::at_path(&path).unwrap();
-        assert!(
-            reloaded.verify().is_err(),
-            "an edit to the log file must not verify"
-        );
+        assert!(reloaded.verify().is_err(), "an edit to the log file must not verify");
     }
 
     #[test]
@@ -463,11 +465,8 @@ mod tests {
 
         let timestamp = &log.entries()[0].timestamp;
         assert!(
-            time::OffsetDateTime::parse(
-                timestamp,
-                &time::format_description::well_known::Rfc3339
-            )
-            .is_ok(),
+            time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339)
+                .is_ok(),
             "timestamp {timestamp} is not RFC 3339"
         );
     }
@@ -497,9 +496,6 @@ mod tests {
         }
 
         assert_eq!(log.len(), 200);
-        assert!(
-            log.verify().is_ok(),
-            "concurrent writers must not interleave into a broken chain"
-        );
+        assert!(log.verify().is_ok(), "concurrent writers must not interleave into a broken chain");
     }
 }

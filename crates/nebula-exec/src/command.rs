@@ -328,10 +328,9 @@ impl Command {
             }
         }
 
-        let mut child = command.spawn().map_err(|source| ExecError::Spawn {
-            program: self.program.clone(),
-            source,
-        })?;
+        let mut child = command
+            .spawn()
+            .map_err(|source| ExecError::Spawn { program: self.program.clone(), source })?;
 
         if let Some(data) = &self.stdin
             && let Some(mut pipe) = child.stdin.take()
@@ -544,11 +543,7 @@ mod tests {
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        let output = Command::new("./hello.sh")
-            .current_dir(dir.path())
-            .run()
-            .await
-            .unwrap();
+        let output = Command::new("./hello.sh").current_dir(dir.path()).run().await.unwrap();
 
         assert!(output.is_success(), "{}", output.stderr);
         assert!(output.stdout.contains("from the working directory"), "{}", output.stdout);
@@ -557,11 +552,8 @@ mod tests {
     #[tokio::test]
     async fn a_relative_program_that_is_not_there_is_still_reported_missing() {
         let dir = tempfile::TempDir::new().unwrap();
-        let error = Command::new("./nothing-here.sh")
-            .current_dir(dir.path())
-            .run()
-            .await
-            .unwrap_err();
+        let error =
+            Command::new("./nothing-here.sh").current_dir(dir.path()).run().await.unwrap_err();
         assert!(matches!(error, ExecError::NotFound(_)), "{error:?}");
     }
 
@@ -615,12 +607,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("marker.txt"), b"found").unwrap();
 
-        let output = Command::new("cat")
-            .arg("marker.txt")
-            .current_dir(dir.path())
-            .run()
-            .await
-            .unwrap();
+        let output =
+            Command::new("cat").arg("marker.txt").current_dir(dir.path()).run().await.unwrap();
         assert_eq!(output.stdout, "found");
     }
 
@@ -698,10 +686,7 @@ mod tests {
         // child would leave `sleep` running.
         let dir = TempDir::new().unwrap();
         let marker = dir.path().join("grandchild-still-running");
-        let script = format!(
-            "sh -c 'sleep 30; touch {}' & wait",
-            marker.display()
-        );
+        let script = format!("sh -c 'sleep 30; touch {}' & wait", marker.display());
 
         let output = Command::new("sh")
             .arg("-c")
@@ -907,11 +892,8 @@ mod tests {
     #[tokio::test]
     async fn the_enforcement_level_is_reported_for_the_audit_log() {
         let dir = TempDir::new().unwrap();
-        let output = Command::new("true")
-            .sandbox(Policy::read_only(dir.path()))
-            .run()
-            .await
-            .unwrap();
+        let output =
+            Command::new("true").sandbox(Policy::read_only(dir.path())).run().await.unwrap();
         assert!(output.enforcement.is_some(), "every sandboxed run must record what it achieved");
     }
 

@@ -135,12 +135,7 @@ pub fn make_patch(old: &[u8], new: &[u8]) -> Patch {
         instructions.push(Instruction::Insert { data: pending });
     }
 
-    Patch {
-        from_hash: hash(old),
-        to_hash: hash(new),
-        to_size: new.len() as u64,
-        instructions,
-    }
+    Patch { from_hash: hash(old), to_hash: hash(new), to_size: new.len() as u64, instructions }
 }
 
 /// Apply `patch` to `old`, verifying the result.
@@ -193,7 +188,10 @@ pub fn apply_patch(old: &[u8], patch: &Patch) -> Result<Vec<u8>> {
 
     let produced = hash(&out);
     if produced != patch.to_hash {
-        return Err(UpdateError::HashMismatch { expected: patch.to_hash.clone(), actual: produced });
+        return Err(UpdateError::HashMismatch {
+            expected: patch.to_hash.clone(),
+            actual: produced,
+        });
     }
     Ok(out)
 }
@@ -300,10 +298,7 @@ mod tests {
         tampered[0] ^= 0xFF;
 
         let err = apply_patch(&tampered, &patch).unwrap_err();
-        assert!(
-            err.to_string().contains("applies to"),
-            "the mismatch should be explained: {err}"
-        );
+        assert!(err.to_string().contains("applies to"), "the mismatch should be explained: {err}");
     }
 
     #[test]

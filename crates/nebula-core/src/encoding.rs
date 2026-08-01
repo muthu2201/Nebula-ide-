@@ -58,8 +58,9 @@ impl Encoding {
     pub fn decode(&self, bytes: &[u8]) -> Result<String, CoreError> {
         let body = bytes.strip_prefix(self.bom()).unwrap_or(bytes);
         match self {
-            Encoding::Utf8 | Encoding::Utf8Bom => String::from_utf8(body.to_vec())
-                .map_err(|e| CoreError::Decode(format!("invalid UTF-8 at byte {}", e.utf8_error().valid_up_to()))),
+            Encoding::Utf8 | Encoding::Utf8Bom => String::from_utf8(body.to_vec()).map_err(|e| {
+                CoreError::Decode(format!("invalid UTF-8 at byte {}", e.utf8_error().valid_up_to()))
+            }),
             Encoding::Utf16Le | Encoding::Utf16Be => {
                 if body.len() % 2 != 0 {
                     return Err(CoreError::Decode(

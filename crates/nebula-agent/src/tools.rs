@@ -235,9 +235,7 @@ impl ToolRegistry {
                 &context.task_id,
                 name,
                 serde_json::json!({ "summary": summary }),
-                AuditOutcome::Refused {
-                    capability: Capability::Destructive.name().to_string(),
-                },
+                AuditOutcome::Refused { capability: Capability::Destructive.name().to_string() },
             )?;
             return Err(AgentError::NotGranted {
                 tool: name.to_string(),
@@ -311,14 +309,20 @@ mod tests {
     }
 
     impl Spy {
-        fn new(name: &'static str, capability: Capability) -> (Arc<Self>, Arc<parking_lot::Mutex<usize>>) {
+        fn new(
+            name: &'static str,
+            capability: Capability,
+        ) -> (Arc<Self>, Arc<parking_lot::Mutex<usize>>) {
             let ran = Arc::new(parking_lot::Mutex::new(0));
             let tool =
                 Arc::new(Self { name, capability, destructive: false, ran: Arc::clone(&ran) });
             (tool, ran)
         }
 
-        fn destructive(name: &'static str, capability: Capability) -> (Arc<Self>, Arc<parking_lot::Mutex<usize>>) {
+        fn destructive(
+            name: &'static str,
+            capability: Capability,
+        ) -> (Arc<Self>, Arc<parking_lot::Mutex<usize>>) {
             let ran = Arc::new(parking_lot::Mutex::new(0));
             let tool =
                 Arc::new(Self { name, capability, destructive: true, ran: Arc::clone(&ran) });
@@ -405,10 +409,8 @@ mod tests {
         let audit = Arc::new(AuditLog::in_memory());
         let registry = registry(Arc::clone(&audit));
 
-        let err = registry
-            .invoke("read_fil", json!({}), &context(GrantSet::coding()))
-            .await
-            .unwrap_err();
+        let err =
+            registry.invoke("read_fil", json!({}), &context(GrantSet::coding())).await.unwrap_err();
         assert!(matches!(err, AgentError::UnknownTool(_)));
     }
 
@@ -424,7 +426,9 @@ mod tests {
             .invoke("delete_all", json!({}), &context(GrantSet::coding()))
             .await
             .unwrap_err();
-        assert!(matches!(err, AgentError::NotGranted { capability, .. } if capability == "destructive"));
+        assert!(
+            matches!(err, AgentError::NotGranted { capability, .. } if capability == "destructive")
+        );
         assert_eq!(*ran.lock(), 0);
 
         // With it granted, and approval given, it runs.
@@ -470,11 +474,8 @@ mod tests {
         registry.register(Spy::new("write_file", Capability::WriteFiles).0);
         registry.register(Spy::new("fetch_url", Capability::Network).0);
 
-        let advertised: Vec<String> = registry
-            .definitions_for(&GrantSet::read_only())
-            .into_iter()
-            .map(|d| d.name)
-            .collect();
+        let advertised: Vec<String> =
+            registry.definitions_for(&GrantSet::read_only()).into_iter().map(|d| d.name).collect();
 
         assert_eq!(advertised, vec!["read_file"]);
         assert_eq!(registry.definitions_for(&GrantSet::coding()).len(), 2);
@@ -489,10 +490,7 @@ mod tests {
         registry.register(Spy::new("write_file", Capability::WriteFiles).0);
 
         // One success, one refusal, one unknown tool.
-        registry
-            .invoke("read_file", json!({}), &context(GrantSet::read_only()))
-            .await
-            .unwrap();
+        registry.invoke("read_file", json!({}), &context(GrantSet::read_only())).await.unwrap();
         let _ = registry.invoke("write_file", json!({}), &context(GrantSet::read_only())).await;
         let _ = registry.invoke("nonexistent", json!({}), &context(GrantSet::read_only())).await;
 
@@ -500,10 +498,7 @@ mod tests {
         assert!(entries.iter().any(|e| matches!(e.outcome, AuditOutcome::Started)));
         assert!(entries.iter().any(|e| matches!(e.outcome, AuditOutcome::Succeeded { .. })));
         assert!(entries.iter().any(|e| matches!(e.outcome, AuditOutcome::Refused { .. })));
-        assert!(
-            audit.verify().is_ok(),
-            "the log written by the registry must itself verify"
-        );
+        assert!(audit.verify().is_ok(), "the log written by the registry must itself verify");
     }
 
     #[tokio::test]

@@ -36,9 +36,7 @@ pub enum SdkError {
     AlreadyExists(std::path::PathBuf),
 
     /// The Rust toolchain is missing the WebAssembly target.
-    #[error(
-        "the `{0}` target is not installed; run `rustup target add {0}`"
-    )]
+    #[error("the `{0}` target is not installed; run `rustup target add {0}`")]
     MissingTarget(String),
 
     /// `cargo` could not be found.

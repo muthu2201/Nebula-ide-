@@ -182,9 +182,7 @@ pub fn write_atomic(path: impl AsRef<Path>, bytes: &[u8]) -> Result<()> {
 
 /// Write a document back to its own path, atomically.
 pub fn write_document(doc: &nebula_core::Document) -> Result<()> {
-    let path = doc
-        .path()
-        .ok_or_else(|| VfsError::NotAFile { path: PathBuf::from("<unsaved>") })?;
+    let path = doc.path().ok_or_else(|| VfsError::NotAFile { path: PathBuf::from("<unsaved>") })?;
     write_atomic(path, &doc.to_bytes())
 }
 

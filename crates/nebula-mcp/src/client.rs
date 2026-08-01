@@ -280,9 +280,8 @@ impl Client {
         }
 
         let result = self.call_method("tools/list", None, json!({})).await?;
-        let tools: Vec<Tool> = serde_json::from_value(
-            result.get("tools").cloned().unwrap_or_else(|| json!([])),
-        )?;
+        let tools: Vec<Tool> =
+            serde_json::from_value(result.get("tools").cloned().unwrap_or_else(|| json!([])))?;
 
         *self.tools_cache.write() = Some(CachedList {
             items: tools.clone(),
@@ -304,9 +303,8 @@ impl Client {
         }
 
         let result = self.call_method("prompts/list", None, json!({})).await?;
-        let prompts: Vec<Prompt> = serde_json::from_value(
-            result.get("prompts").cloned().unwrap_or_else(|| json!([])),
-        )?;
+        let prompts: Vec<Prompt> =
+            serde_json::from_value(result.get("prompts").cloned().unwrap_or_else(|| json!([])))?;
 
         *self.prompts_cache.write() = Some(CachedList {
             items: prompts.clone(),
@@ -328,9 +326,8 @@ impl Client {
         }
 
         let result = self.call_method("resources/list", None, json!({})).await?;
-        let resources: Vec<Resource> = serde_json::from_value(
-            result.get("resources").cloned().unwrap_or_else(|| json!([])),
-        )?;
+        let resources: Vec<Resource> =
+            serde_json::from_value(result.get("resources").cloned().unwrap_or_else(|| json!([])))?;
 
         *self.resources_cache.write() = Some(CachedList {
             items: resources.clone(),
@@ -352,11 +349,7 @@ impl Client {
     /// client retries the *same* call with `inputResponses` filled in. That loop
     /// lives here, bounded by [`ClientConfig::max_rounds`], so callers see a
     /// single request/response.
-    pub async fn call_tool(
-        &self,
-        name: &str,
-        arguments: serde_json::Value,
-    ) -> Result<ToolResult> {
+    pub async fn call_tool(&self, name: &str, arguments: serde_json::Value) -> Result<ToolResult> {
         let mut responses: HashMap<String, serde_json::Value> = HashMap::new();
 
         for round in 0..self.config.max_rounds {
@@ -367,8 +360,8 @@ impl Client {
 
             let result = self.call_method("tools/call", Some(name), params).await?;
 
-            let needs_input = result.get("resultType").and_then(|v| v.as_str())
-                == Some("input_required");
+            let needs_input =
+                result.get("resultType").and_then(|v| v.as_str()) == Some("input_required");
             if !needs_input {
                 return Ok(serde_json::from_value(result)?);
             }
@@ -484,11 +477,7 @@ impl Client {
         if !self.version.supports_cacheable_lists() {
             return None;
         }
-        result
-            .get("ttlMs")
-            .and_then(|v| v.as_u64())
-            .filter(|ms| *ms > 0)
-            .map(Duration::from_millis)
+        result.get("ttlMs").and_then(|v| v.as_u64()).filter(|ms| *ms > 0).map(Duration::from_millis)
     }
 
     /// Drop every cached list, e.g. after a `listChanged` notification.
@@ -547,13 +536,7 @@ mod tests {
         }
 
         fn requests_for(&self, method: &str) -> Vec<(JsonRpcRequest, RequestHeaders)> {
-            self.seen
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(r, _)| r.method == method)
-                .cloned()
-                .collect()
+            self.seen.lock().unwrap().iter().filter(|(r, _)| r.method == method).cloned().collect()
         }
 
         fn call_count(&self, method: &str) -> usize {
@@ -926,9 +909,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_results_are_cached_when_the_server_sets_a_ttl() {
-        let server = Arc::new(
-            TestServer::new(ProtocolVersion::V2026_07_28).with_list_ttl(60_000),
-        );
+        let server = Arc::new(TestServer::new(ProtocolVersion::V2026_07_28).with_list_ttl(60_000));
         let client = connect(Arc::clone(&server)).await;
 
         client.list_tools().await.unwrap();
@@ -953,8 +934,7 @@ mod tests {
 
     #[tokio::test]
     async fn older_revisions_never_cache_even_if_a_ttl_appears() {
-        let server =
-            Arc::new(TestServer::new(ProtocolVersion::V2025_11_25).with_list_ttl(60_000));
+        let server = Arc::new(TestServer::new(ProtocolVersion::V2025_11_25).with_list_ttl(60_000));
         let client = connect(Arc::clone(&server)).await;
 
         client.list_tools().await.unwrap();
@@ -968,9 +948,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalidating_the_cache_forces_a_refetch() {
-        let server = Arc::new(
-            TestServer::new(ProtocolVersion::V2026_07_28).with_list_ttl(60_000),
-        );
+        let server = Arc::new(TestServer::new(ProtocolVersion::V2026_07_28).with_list_ttl(60_000));
         let client = connect(Arc::clone(&server)).await;
 
         client.list_tools().await.unwrap();

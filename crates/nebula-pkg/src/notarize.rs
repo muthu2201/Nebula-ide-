@@ -100,8 +100,7 @@ pub fn notarize(manifest: &Manifest, component: &[u8]) -> NotarizationReport {
     // --- Structural checks ---
     if !is_component(component) {
         rejections.push(
-            "the binary is a core WebAssembly module, not a Component Model component"
-                .to_string(),
+            "the binary is a core WebAssembly module, not a Component Model component".to_string(),
         );
     }
     if component.len() < MIN_COMPONENT_BYTES {
@@ -195,11 +194,7 @@ mod tests {
             name: "Thing".to_string(),
             version: Version::parse(version).unwrap(),
             description: "A thing".to_string(),
-            author: crate::manifest::Author {
-                name: "Author".to_string(),
-                email: None,
-                url: None,
-            },
+            author: crate::manifest::Author { name: "Author".to_string(), email: None, url: None },
             license: "MIT".to_string(),
             world_version: Version::new(0, 1, 0),
             capabilities: capabilities.iter().copied().collect(),
@@ -272,11 +267,7 @@ mod tests {
         for capability in REVIEW_REQUIRED {
             let manifest = manifest_with(&[*capability], "1.0.0");
             let report = notarize(&manifest, &plain_component());
-            assert!(
-                !report.verdict.may_publish(),
-                "`{}` should require review",
-                capability.name()
-            );
+            assert!(!report.verdict.may_publish(), "`{}` should require review", capability.name());
         }
     }
 

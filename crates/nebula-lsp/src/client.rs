@@ -43,7 +43,8 @@ impl Default for ServerConfig {
 #[derive(Default)]
 struct Shared {
     /// Requests awaiting a response, by id.
-    pending: parking_lot::Mutex<HashMap<i64, oneshot::Sender<std::result::Result<Value, LspError>>>>,
+    pending:
+        parking_lot::Mutex<HashMap<i64, oneshot::Sender<std::result::Result<Value, LspError>>>>,
     /// Latest diagnostics per document URI.
     diagnostics: RwLock<HashMap<String, Vec<Diagnostic>>>,
     /// Whether the server has closed its output.
@@ -89,11 +90,7 @@ impl LanguageServer {
     }
 
     /// Launch `program` and speak LSP over its stdio.
-    pub async fn spawn(
-        program: &str,
-        args: &[String],
-        config: ServerConfig,
-    ) -> Result<Arc<Self>> {
+    pub async fn spawn(program: &str, args: &[String], config: ServerConfig) -> Result<Arc<Self>> {
         let mut command = tokio::process::Command::new(program);
         command
             .args(args)
@@ -102,10 +99,9 @@ impl LanguageServer {
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
-        let mut child = command.spawn().map_err(|source| LspError::Spawn {
-            program: program.to_string(),
-            source,
-        })?;
+        let mut child = command
+            .spawn()
+            .map_err(|source| LspError::Spawn { program: program.to_string(), source })?;
 
         let stdin = child.stdin.take().ok_or(LspError::Exited)?;
         let stdout = child.stdout.take().ok_or(LspError::Exited)?;
@@ -206,12 +202,7 @@ impl LanguageServer {
     }
 
     /// Tell the server a document is open.
-    pub async fn did_open(
-        &self,
-        path: &Path,
-        language_id: &str,
-        text: &str,
-    ) -> Result<()> {
+    pub async fn did_open(&self, path: &Path, language_id: &str, text: &str) -> Result<()> {
         self.require_initialized("textDocument/didOpen")?;
         let uri = path_to_uri(path);
         self.versions.lock().insert(uri.clone(), 1);
@@ -590,10 +581,7 @@ fn parse_locations(result: &Value) -> Vec<Location> {
         }
         // LocationLink: `targetUri` plus `targetSelectionRange`.
         let uri = value.get("targetUri")?.as_str()?.to_string();
-        let range = value
-            .get("targetSelectionRange")
-            .or_else(|| value.get("targetRange"))?
-            .clone();
+        let range = value.get("targetSelectionRange").or_else(|| value.get("targetRange"))?.clone();
         Some(Location { uri, range: serde_json::from_value(range).ok()? })
     }
 
@@ -806,14 +794,11 @@ mod tests {
     async fn requests_before_initialize_are_refused_locally() {
         let (client_side, _server_side) = duplex(1024);
         let (_server_read, client_read) = duplex(1024);
-        let client =
-            LanguageServer::connect(client_read, client_side, ServerConfig::default());
+        let client = LanguageServer::connect(client_read, client_side, ServerConfig::default());
 
         let buffer = TextBuffer::from_str("fn main() {}");
-        let err = client
-            .completion(Path::new("/project/src/main.rs"), &buffer, 0)
-            .await
-            .unwrap_err();
+        let err =
+            client.completion(Path::new("/project/src/main.rs"), &buffer, 0).await.unwrap_err();
         assert!(
             matches!(err, LspError::NotInitialized(_)),
             "a request before initialize hangs most servers, so it is caught here: {err:?}"
@@ -864,10 +849,7 @@ mod tests {
             Position::new(10, 7),
             "targetSelectionRange is the one to jump to, not targetRange"
         );
-        assert_eq!(
-            locations[0].path().unwrap(),
-            std::path::PathBuf::from("/project/src/lib.rs")
-        );
+        assert_eq!(locations[0].path().unwrap(), std::path::PathBuf::from("/project/src/lib.rs"));
     }
 
     #[tokio::test]
@@ -919,10 +901,7 @@ mod tests {
 
         client.did_open(path, "rust", "fn main() {}").await.unwrap();
         client.did_close(path).await.unwrap();
-        assert!(
-            client.diagnostics(path).is_empty(),
-            "diagnostics for a closed document are stale"
-        );
+        assert!(client.diagnostics(path).is_empty(), "diagnostics for a closed document are stale");
     }
 
     #[tokio::test]
@@ -949,8 +928,7 @@ mod tests {
         drop(server_side);
         drop(server_read);
 
-        let client =
-            LanguageServer::connect(client_read, client_side, ServerConfig::default());
+        let client = LanguageServer::connect(client_read, client_side, ServerConfig::default());
         let err = client.request("initialize", json!({})).await.unwrap_err();
         assert!(matches!(err, LspError::Exited | LspError::Io(_)), "{err:?}");
     }
@@ -1052,9 +1030,6 @@ mod tests {
             "targetRange": range
         }]));
         assert_eq!(parsed.len(), 1);
-        assert_eq!(
-            parsed[0].range,
-            Range::new(Position::new(3, 0), Position::new(5, 1))
-        );
+        assert_eq!(parsed[0].range, Range::new(Position::new(3, 0), Position::new(5, 1)));
     }
 }

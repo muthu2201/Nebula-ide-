@@ -385,9 +385,8 @@ mod tests {
 
         // Delete most of the text and tell the tree about it, without parsing.
         let before = document.buffer().clone();
-        document.set_selections(nebula_core::SelectionSet::single(
-            nebula_core::Selection::new(4, 28),
-        ));
+        document
+            .set_selections(nebula_core::SelectionSet::single(nebula_core::Selection::new(4, 28)));
         document.delete_backward().unwrap();
 
         let change: Vec<Transaction> = document.last_change().to_vec();
@@ -435,10 +434,7 @@ mod tests {
         let buffer = TextBuffer::from_str(source);
         let tree = SyntaxTree::parse(grammar, &buffer, 0).unwrap();
         let spans = Highlighter::new().highlight(&tree, &buffer).unwrap();
-        spans
-            .into_iter()
-            .map(|s| (buffer.slice(s.range).unwrap(), s.kind))
-            .collect()
+        spans.into_iter().map(|s| (buffer.slice(s.range).unwrap(), s.kind)).collect()
     }
 
     #[test]
@@ -554,18 +550,18 @@ mod tests {
         // The nested span wins its own extent; the enclosing span keeps the
         // head and the tail around it.
         assert_eq!(resolved.len(), 3);
-        assert_eq!(resolved[0], HighlightSpan {
-            range: Range::new(0, 3),
-            kind: HighlightKind::Variable
-        });
-        assert_eq!(resolved[1], HighlightSpan {
-            range: Range::new(3, 6),
-            kind: HighlightKind::Function
-        });
-        assert_eq!(resolved[2], HighlightSpan {
-            range: Range::new(6, 10),
-            kind: HighlightKind::Variable
-        });
+        assert_eq!(
+            resolved[0],
+            HighlightSpan { range: Range::new(0, 3), kind: HighlightKind::Variable }
+        );
+        assert_eq!(
+            resolved[1],
+            HighlightSpan { range: Range::new(3, 6), kind: HighlightKind::Function }
+        );
+        assert_eq!(
+            resolved[2],
+            HighlightSpan { range: Range::new(6, 10), kind: HighlightKind::Variable }
+        );
     }
 
     #[test]

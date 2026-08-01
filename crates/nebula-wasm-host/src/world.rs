@@ -450,8 +450,7 @@ mod tests {
 
     #[test]
     fn every_capability_maps_to_a_distinct_wit_interface() {
-        let mut interfaces: Vec<&str> =
-            Capability::ALL.iter().map(|c| c.wit_interface()).collect();
+        let mut interfaces: Vec<&str> = Capability::ALL.iter().map(|c| c.wit_interface()).collect();
         let count = interfaces.len();
         interfaces.sort_unstable();
         interfaces.dedup();
@@ -497,19 +496,14 @@ mod tests {
 
     #[test]
     fn an_unversioned_import_still_maps() {
-        assert_eq!(
-            Capability::from_interface("nebula:ide/http"),
-            Some(Capability::Network)
-        );
+        assert_eq!(Capability::from_interface("nebula:ide/http"), Some(Capability::Network));
     }
 
     #[test]
     fn unrecognised_imports_map_to_nothing() {
         // WASI and other host-provided interfaces are not Nebula capabilities.
-        let imports = vec![
-            "wasi:cli/environment@0.2.0".to_string(),
-            "wasi:io/streams@0.2.0".to_string(),
-        ];
+        let imports =
+            vec!["wasi:cli/environment@0.2.0".to_string(), "wasi:io/streams@0.2.0".to_string()];
         assert!(capabilities_from_imports(&imports).is_empty());
     }
 

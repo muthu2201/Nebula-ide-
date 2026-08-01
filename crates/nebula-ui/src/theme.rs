@@ -150,8 +150,7 @@ impl Theme {
 
     /// Parse a theme from JSON, rejecting anything the renderer could not draw.
     pub fn from_json(json: &str) -> Result<Theme> {
-        let theme: Theme =
-            serde_json::from_str(json).map_err(|e| UiError::Theme(e.to_string()))?;
+        let theme: Theme = serde_json::from_str(json).map_err(|e| UiError::Theme(e.to_string()))?;
         theme.validate()?;
         Ok(theme)
     }
@@ -351,8 +350,7 @@ mod tests {
         assert!(relative_luminance(Color::rgb(0, 0, 0)).abs() < 1e-6);
         // Pure green is the brightest primary by a wide margin.
         assert!(
-            relative_luminance(Color::rgb(0, 255, 0))
-                > relative_luminance(Color::rgb(255, 0, 0))
+            relative_luminance(Color::rgb(0, 255, 0)) > relative_luminance(Color::rgb(255, 0, 0))
         );
     }
 
@@ -375,10 +373,7 @@ mod tests {
         // parse without any of the fields the built-ins happen to set first.
         let mut syntax = String::new();
         for kind in HighlightKind::ALL {
-            syntax.push_str(&format!(
-                r#""{}": {{"r":255,"g":0,"b":255,"a":255}},"#,
-                kind.name()
-            ));
+            syntax.push_str(&format!(r#""{}": {{"r":255,"g":0,"b":255,"a":255}},"#, kind.name()));
         }
         let syntax = syntax.trim_end_matches(',');
 

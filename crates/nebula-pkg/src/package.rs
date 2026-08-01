@@ -66,8 +66,7 @@ impl Package {
 
     /// Serialise the package to bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        let encoder =
-            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         let mut archive = tar::Builder::new(encoder);
 
         let manifest = self.contents.manifest.to_toml()?;
@@ -183,9 +182,7 @@ fn append<W: Write>(archive: &mut tar::Builder<W>, name: &str, bytes: &[u8]) -> 
     header.set_gid(0);
     header.set_cksum();
 
-    archive
-        .append_data(&mut header, name, bytes)
-        .map_err(|e| PkgError::Archive(e.to_string()))
+    archive.append_data(&mut header, name, bytes).map_err(|e| PkgError::Archive(e.to_string()))
 }
 
 #[cfg(test)]
@@ -287,10 +284,7 @@ mod tests {
 
         package.contents.component.extend_from_slice(b"\x00malicious payload");
 
-        assert!(
-            package.verify_integrity().is_err(),
-            "a modified component must not verify"
-        );
+        assert!(package.verify_integrity().is_err(), "a modified component must not verify");
     }
 
     #[test]
@@ -327,7 +321,8 @@ mod tests {
         // The same contents must build byte-identically, or a rebuild cannot be
         // compared against a published artefact.
         let keys = KeyPair::from_private_base64(&KeyPair::generate().to_private_base64()).unwrap();
-        let first = Package { contents: contents(), signature: keys.sign(&contents().digest().unwrap()) };
+        let first =
+            Package { contents: contents(), signature: keys.sign(&contents().digest().unwrap()) };
         let second = Package { contents: contents(), signature: first.signature.clone() };
 
         assert_eq!(
@@ -406,8 +401,7 @@ mod tests {
         // Two zero blocks terminate the archive.
         tar.extend_from_slice(&[0u8; 1024]);
 
-        let mut encoder =
-            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(&tar).unwrap();
         encoder.finish().unwrap()
     }

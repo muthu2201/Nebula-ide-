@@ -171,10 +171,7 @@ impl GpuRenderer {
     /// The async form of [`GpuRenderer::new`].
     pub async fn new_async(surface: Surface) -> Result<Self> {
         if surface.width == 0 || surface.height == 0 {
-            return Err(RenderError::InvalidSize {
-                width: surface.width,
-                height: surface.height,
-            });
+            return Err(RenderError::InvalidSize { width: surface.width, height: surface.height });
         }
 
         // Accept any backend, including a software rasteriser: a slow GPU path
@@ -226,20 +223,19 @@ impl GpuRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("nebula-frame-layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("nebula-frame-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("nebula-frame-bind-group"),
@@ -314,10 +310,7 @@ impl GpuRenderer {
     pub fn is_available() -> bool {
         pollster::block_on(async {
             let instance = wgpu::Instance::new(instance_descriptor());
-            instance
-                .request_adapter(&wgpu::RequestAdapterOptions::default())
-                .await
-                .is_ok()
+            instance.request_adapter(&wgpu::RequestAdapterOptions::default()).await.is_ok()
         })
     }
 
@@ -406,10 +399,7 @@ impl Renderer for GpuRenderer {
             return Ok(());
         }
         if surface.width == 0 || surface.height == 0 {
-            return Err(RenderError::InvalidSize {
-                width: surface.width,
-                height: surface.height,
-            });
+            return Err(RenderError::InvalidSize { width: surface.width, height: surface.height });
         }
         self.target = create_target(&self.device, surface);
         self.surface = surface;
@@ -457,10 +447,9 @@ impl Renderer for GpuRenderer {
         let view = self.target.create_view(&wgpu::TextureViewDescriptor::default());
         let background = scene.background.to_linear();
 
-        let mut encoder =
-            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("nebula-frame"),
-            });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("nebula-frame"),
+        });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("nebula-quad-pass"),
@@ -545,7 +534,8 @@ impl Renderer for GpuRenderer {
         let padded = slice
             .get_mapped_range()
             .map_err(|e| RenderError::Frame(format!("reading the mapped range: {e}")))?;
-        let mut pixels = Vec::with_capacity((self.surface.width * self.surface.height * 4) as usize);
+        let mut pixels =
+            Vec::with_capacity((self.surface.width * self.surface.height * 4) as usize);
         for row in 0..self.surface.height {
             let start = (row * bytes_per_row) as usize;
             let end = start + (self.surface.width * 4) as usize;
@@ -557,15 +547,13 @@ impl Renderer for GpuRenderer {
         // Composite text on the CPU into the read-back frame. Glyph rasterising
         // is the same code the software backend runs, so text is identical
         // whichever backend drew the quads.
-        let mut pixmap =
-            tiny_skia::Pixmap::from_vec(pixels, tiny_skia::IntSize::from_wh(
-                self.surface.width,
-                self.surface.height,
-            ).ok_or(RenderError::InvalidSize {
-                width: self.surface.width,
-                height: self.surface.height,
-            })?)
-            .ok_or_else(|| RenderError::Frame("read-back frame is the wrong size".to_string()))?;
+        let mut pixmap = tiny_skia::Pixmap::from_vec(
+            pixels,
+            tiny_skia::IntSize::from_wh(self.surface.width, self.surface.height).ok_or(
+                RenderError::InvalidSize { width: self.surface.width, height: self.surface.height },
+            )?,
+        )
+        .ok_or_else(|| RenderError::Frame("read-back frame is the wrong size".to_string()))?;
 
         let mut clips: Vec<Rect> = Vec::new();
         for primitive in &scene.primitives {

@@ -119,7 +119,9 @@ pub enum WasmError {
     },
 
     /// The component targets a WIT world version this host does not implement.
-    #[error("extension `{name}` targets world version {wanted}, but this host provides {available}")]
+    #[error(
+        "extension `{name}` targets world version {wanted}, but this host provides {available}"
+    )]
     IncompatibleWorld {
         /// Which extension.
         name: String,

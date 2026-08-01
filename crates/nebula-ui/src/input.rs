@@ -71,8 +71,7 @@ pub struct Modifiers {
 
 impl Modifiers {
     /// Nothing held.
-    pub const NONE: Modifiers =
-        Modifiers { ctrl: false, shift: false, alt: false, meta: false };
+    pub const NONE: Modifiers = Modifiers { ctrl: false, shift: false, alt: false, meta: false };
 
     /// Only <kbd>Shift</kbd>.
     pub const SHIFT: Modifiers = Modifiers { shift: true, ..Modifiers::NONE };
@@ -317,9 +316,7 @@ pub fn keymap(event: &KeyEvent) -> Option<Action> {
         Key::Escape => Some(Action::CollapseSelection),
 
         Key::Left => Some(motion(m, if m.word() { Motion::WordLeft } else { Motion::Left })),
-        Key::Right => {
-            Some(motion(m, if m.word() { Motion::WordRight } else { Motion::Right }))
-        }
+        Key::Right => Some(motion(m, if m.word() { Motion::WordRight } else { Motion::Right })),
 
         // Ctrl/Cmd with a vertical arrow adds a cursor rather than moving one:
         // this is how multi-cursor editing is reached without a mouse.
@@ -420,15 +417,13 @@ pub fn apply(
         }
 
         Action::DeleteWordBackward => {
-            outcome.edited = delete_to(document, |buffer, offset| {
-                word::prev_word_boundary(buffer, offset)
-            })?;
+            outcome.edited =
+                delete_to(document, |buffer, offset| word::prev_word_boundary(buffer, offset))?;
         }
 
         Action::DeleteWordForward => {
-            outcome.edited = delete_to(document, |buffer, offset| {
-                word::next_word_boundary(buffer, offset)
-            })?;
+            outcome.edited =
+                delete_to(document, |buffer, offset| word::next_word_boundary(buffer, offset))?;
         }
 
         Action::DeleteToLineEnd => {
@@ -628,9 +623,8 @@ fn add_cursor(document: &mut Document, direction: isize) -> Result<bool> {
     };
 
     let column = position.column.min(document.buffer().line_len(target_line)?);
-    let offset = document
-        .buffer()
-        .position_to_offset(nebula_core::Position::new(target_line, column))?;
+    let offset =
+        document.buffer().position_to_offset(nebula_core::Position::new(target_line, column))?;
     document.add_cursor(offset);
     Ok(true)
 }
@@ -653,11 +647,9 @@ fn move_cursors(
         // A plain left/right on a non-empty selection collapses to its edge
         // rather than moving one character from the head — this is the one
         // motion where "collapse" and "move" differ.
-        if !extend
-            && !selection.is_empty()
-            && matches!(motion, Motion::Left | Motion::Right)
-        {
-            let at = if matches!(motion, Motion::Left) { selection.start() } else { selection.end() };
+        if !extend && !selection.is_empty() && matches!(motion, Motion::Left | Motion::Right) {
+            let at =
+                if matches!(motion, Motion::Left) { selection.start() } else { selection.end() };
             targets.push((at, None));
             continue;
         }
@@ -700,15 +692,14 @@ fn move_cursors(
             }
         };
 
-        let keep_column = matches!(
-            motion,
-            Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
-        )
-        .then(|| {
-            selection
-                .desired_column
-                .unwrap_or_else(|| document.buffer().offset_to_position(from).map(|p| p.column).unwrap_or(0))
-        });
+        let keep_column =
+            matches!(motion, Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown).then(
+                || {
+                    selection.desired_column.unwrap_or_else(|| {
+                        document.buffer().offset_to_position(from).map(|p| p.column).unwrap_or(0)
+                    })
+                },
+            );
 
         targets.push((target, keep_column));
     }
@@ -718,11 +709,7 @@ fn move_cursors(
     selections.transform(|selection| {
         let (target, desired) = targets[index];
         index += 1;
-        let mut moved = if extend {
-            selection.extend_to(target)
-        } else {
-            Selection::caret(target)
-        };
+        let mut moved = if extend { selection.extend_to(target) } else { Selection::caret(target) };
         moved.desired_column = desired;
         moved
     });
@@ -774,10 +761,7 @@ mod tests {
     #[test]
     fn a_plain_letter_is_text_and_a_modified_one_is_a_command() {
         assert_eq!(keymap(&KeyEvent::char('s')), Some(Action::Insert("s".to_string())));
-        assert_eq!(
-            keymap(&KeyEvent::with(Key::Char('s'), Modifiers::PRIMARY)),
-            Some(Action::Save)
-        );
+        assert_eq!(keymap(&KeyEvent::with(Key::Char('s'), Modifiers::PRIMARY)), Some(Action::Save));
     }
 
     #[test]
@@ -953,10 +937,24 @@ mod tests {
 
         let mut view = viewport();
         apply(&Action::Move(Motion::Down), &mut document, &mut view, false).unwrap();
-        assert_eq!(document.buffer().offset_to_position(document.selections().primary().head).unwrap().column, 5);
+        assert_eq!(
+            document
+                .buffer()
+                .offset_to_position(document.selections().primary().head)
+                .unwrap()
+                .column,
+            5
+        );
 
         apply(&Action::Move(Motion::Down), &mut document, &mut view, false).unwrap();
-        assert_eq!(document.buffer().offset_to_position(document.selections().primary().head).unwrap().column, 12);
+        assert_eq!(
+            document
+                .buffer()
+                .offset_to_position(document.selections().primary().head)
+                .unwrap()
+                .column,
+            12
+        );
     }
 
     #[test]
@@ -1168,8 +1166,7 @@ mod tests {
         let mut view = Viewport::new(30, 80);
 
         apply(&Action::Move(Motion::PageDown), &mut document, &mut view, false).unwrap();
-        let line =
-            document.buffer().offset_to_line(document.selections().primary().head).unwrap();
+        let line = document.buffer().offset_to_line(document.selections().primary().head).unwrap();
         assert_eq!(line, 30);
     }
 

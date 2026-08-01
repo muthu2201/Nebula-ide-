@@ -132,7 +132,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             } else {
                 style("FAILED").red().bold().to_string()
             };
-            println!("  {:<12} {verdict:<20} {}", program.language, program.output.lines().next().unwrap_or(""));
+            println!(
+                "  {:<12} {verdict:<20} {}",
+                program.language,
+                program.output.lines().next().unwrap_or("")
+            );
         }
     }
 

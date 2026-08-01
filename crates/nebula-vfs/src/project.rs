@@ -210,11 +210,7 @@ impl Project {
 
     /// Files whose detected language matches `language`.
     pub fn files_with_language(&self, language: &str) -> Result<Vec<ProjectEntry>> {
-        Ok(self
-            .files()?
-            .into_iter()
-            .filter(|e| e.language.as_deref() == Some(language))
-            .collect())
+        Ok(self.files()?.into_iter().filter(|e| e.language.as_deref() == Some(language)).collect())
     }
 
     /// Read a project-relative file.

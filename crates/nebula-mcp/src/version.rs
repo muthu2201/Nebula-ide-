@@ -25,11 +25,8 @@ impl ProtocolVersion {
     pub const PREFERRED: ProtocolVersion = ProtocolVersion::V2026_07_28;
 
     /// The oldest revision still supported, in ascending order.
-    pub const SUPPORTED: &'static [ProtocolVersion] = &[
-        ProtocolVersion::V2025_06_18,
-        ProtocolVersion::V2025_11_25,
-        ProtocolVersion::V2026_07_28,
-    ];
+    pub const SUPPORTED: &'static [ProtocolVersion] =
+        &[ProtocolVersion::V2025_06_18, ProtocolVersion::V2025_11_25, ProtocolVersion::V2026_07_28];
 
     /// The wire representation.
     pub const fn as_str(&self) -> &'static str {
@@ -211,8 +208,7 @@ impl Capabilities {
             prompts: has("prompts"),
             resources: has("resources"),
             elicitation: has("elicitation"),
-            tasks: has("tasks")
-                || extensions.iter().any(|e| e == "io.modelcontextprotocol/tasks"),
+            tasks: has("tasks") || extensions.iter().any(|e| e == "io.modelcontextprotocol/tasks"),
             extensions,
         }
     }
@@ -293,14 +289,8 @@ mod tests {
         for feature in ["sampling", "roots", "logging"] {
             let status = ProtocolVersion::V2026_07_28.feature_status(feature);
             assert_eq!(status, FeatureStatus::Deprecated, "{feature}");
-            assert!(
-                status.is_usable(),
-                "{feature} must keep working through its 12-month window"
-            );
-            assert_eq!(
-                ProtocolVersion::V2025_06_18.feature_status(feature),
-                FeatureStatus::Active
-            );
+            assert!(status.is_usable(), "{feature} must keep working through its 12-month window");
+            assert_eq!(ProtocolVersion::V2025_06_18.feature_status(feature), FeatureStatus::Active);
         }
     }
 

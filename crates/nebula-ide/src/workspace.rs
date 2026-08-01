@@ -166,9 +166,7 @@ impl Workspace {
         if let Some(index) = self.files.iter().position(|file| {
             file.document
                 .path()
-                .map(|p| {
-                    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()) == canonical
-                })
+                .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()) == canonical)
                 .unwrap_or(false)
         }) {
             self.active = index;

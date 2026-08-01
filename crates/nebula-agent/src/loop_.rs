@@ -16,10 +16,10 @@ use nebula_ai::{
     CompletionRequest, ContentBlock, Message, Model, ModelProvider, Role, StopReason, Usage,
 };
 
+use crate::Result;
 use crate::audit::AuditLog;
 use crate::capability::GrantSet;
 use crate::tools::{ToolContext, ToolRegistry};
-use crate::Result;
 
 /// How the agent should behave.
 #[derive(Debug, Clone)]
@@ -242,10 +242,9 @@ impl Agent {
 
             events.push(AgentEvent::TurnStarted { turn: turns });
 
-            let mut request =
-                CompletionRequest::new(self.config.model, messages.clone())
-                    .system(&self.config.system_prompt)
-                    .max_tokens(self.config.max_tokens_per_turn);
+            let mut request = CompletionRequest::new(self.config.model, messages.clone())
+                .system(&self.config.system_prompt)
+                .max_tokens(self.config.max_tokens_per_turn);
             request.tools = self.registry.definitions_for(&self.config.grants);
 
             // Place cache breakpoints: the system prompt and tool definitions are
@@ -396,7 +395,10 @@ mod tests {
             "scripted"
         }
 
-        async fn complete(&self, request: CompletionRequest) -> nebula_ai::Result<CompletionResponse> {
+        async fn complete(
+            &self,
+            request: CompletionRequest,
+        ) -> nebula_ai::Result<CompletionResponse> {
             self.requests.lock().push(request);
             let mut responses = self.responses.lock();
             if responses.is_empty() {
@@ -411,8 +413,9 @@ mod tests {
         async fn stream(
             &self,
             _request: CompletionRequest,
-        ) -> nebula_ai::Result<futures::stream::BoxStream<'static, nebula_ai::Result<nebula_ai::StreamEvent>>>
-        {
+        ) -> nebula_ai::Result<
+            futures::stream::BoxStream<'static, nebula_ai::Result<nebula_ai::StreamEvent>>,
+        > {
             unimplemented!("the loop uses complete()")
         }
 
@@ -433,7 +436,10 @@ mod tests {
     }
 
     impl Echo {
-        fn new(name: &'static str, capability: Capability) -> (Arc<Self>, Arc<Mutex<Vec<serde_json::Value>>>) {
+        fn new(
+            name: &'static str,
+            capability: Capability,
+        ) -> (Arc<Self>, Arc<Mutex<Vec<serde_json::Value>>>) {
             let calls = Arc::new(Mutex::new(Vec::new()));
             (Arc::new(Self { name, capability, calls: Arc::clone(&calls) }), calls)
         }
@@ -470,28 +476,22 @@ mod tests {
     ) -> (Agent, Arc<AuditLog>, Arc<ScriptedProvider>) {
         let provider = ScriptedProvider::new(responses);
         let audit = Arc::new(AuditLog::in_memory());
-        let mut registry = ToolRegistry::new(Arc::clone(&audit)).with_approval(Arc::new(ApproveAll));
+        let mut registry =
+            ToolRegistry::new(Arc::clone(&audit)).with_approval(Arc::new(ApproveAll));
         for tool in tools {
             registry.register(tool);
         }
-        let agent = Agent::new(
-            provider.clone(),
-            Arc::new(registry),
-            Arc::clone(&audit),
-            config,
-        );
+        let agent = Agent::new(provider.clone(), Arc::new(registry), Arc::clone(&audit), config);
         (agent, audit, provider)
     }
 
     #[tokio::test]
     async fn a_plain_answer_ends_the_loop_in_one_turn() {
-        let (agent, _audit, _provider) = agent_with(
-            vec![text_response("The answer is 4.")],
-            vec![],
-            AgentConfig::default(),
-        );
+        let (agent, _audit, _provider) =
+            agent_with(vec![text_response("The answer is 4.")], vec![], AgentConfig::default());
 
-        let result = agent.run("task-1", "/project", vec![Message::user("What is 2+2?")]).await.unwrap();
+        let result =
+            agent.run("task-1", "/project", vec![Message::user("What is 2+2?")]).await.unwrap();
 
         assert_eq!(result.reason, FinishReason::Completed);
         assert_eq!(result.turns, 1);
@@ -545,7 +545,8 @@ mod tests {
             config,
         );
 
-        let result = agent.run("task-1", "/project", vec![Message::user("Edit main.rs")]).await.unwrap();
+        let result =
+            agent.run("task-1", "/project", vec![Message::user("Edit main.rs")]).await.unwrap();
 
         assert_eq!(result.reason, FinishReason::Completed);
         assert_eq!(*calls.lock(), Vec::<serde_json::Value>::new(), "the tool must not have run");
@@ -556,10 +557,10 @@ mod tests {
         );
 
         let fed_back = result.messages.iter().any(|m| {
-            m.content.iter().any(
-                |b| matches!(b, ContentBlock::ToolResult { content, is_error, .. }
-                    if *is_error && content.contains("write-files")),
-            )
+            m.content.iter().any(|b| {
+                matches!(b, ContentBlock::ToolResult { content, is_error, .. }
+                    if *is_error && content.contains("write-files"))
+            })
         });
         assert!(fed_back, "the model must be told why the call was refused");
     }
@@ -588,7 +589,8 @@ mod tests {
             .map(|i| {
                 let mut response =
                     tool_response(&format!("call_{i}"), "read_file", json!({ "path": "a.rs" }));
-                response.usage = Usage { input_tokens: 10_000, output_tokens: 5_000, ..Usage::default() };
+                response.usage =
+                    Usage { input_tokens: 10_000, output_tokens: 5_000, ..Usage::default() };
                 response
             })
             .collect();
@@ -604,9 +606,8 @@ mod tests {
 
     #[tokio::test]
     async fn cancellation_stops_the_loop() {
-        let responses: Vec<CompletionResponse> = (0..20)
-            .map(|i| tool_response(&format!("call_{i}"), "read_file", json!({})))
-            .collect();
+        let responses: Vec<CompletionResponse> =
+            (0..20).map(|i| tool_response(&format!("call_{i}"), "read_file", json!({}))).collect();
         let (echo, _calls) = Echo::new("read_file", Capability::ReadFiles);
 
         let (agent, _audit, _provider) = agent_with(responses, vec![echo], AgentConfig::default());

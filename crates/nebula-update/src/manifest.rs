@@ -314,8 +314,7 @@ impl UpdateSigner {
             signature: String::new(),
         };
         let signature = self.signing.sign(&manifest.signing_bytes());
-        manifest.signature =
-            base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        manifest.signature = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
         manifest
     }
 }
@@ -406,9 +405,8 @@ mod tests {
         ]);
         let platform = Platform::new("x86_64-unknown-linux-gnu");
 
-        let best = manifest
-            .best_update(&Version::new(1, 0, 0), Channel::Stable, &platform)
-            .unwrap();
+        let best =
+            manifest.best_update(&Version::new(1, 0, 0), Channel::Stable, &platform).unwrap();
         assert_eq!(best.version, Version::new(1, 2, 0));
     }
 
@@ -434,10 +432,7 @@ mod tests {
             "a stable user must not be pushed onto a beta"
         );
         assert_eq!(
-            manifest
-                .best_update(&Version::new(1, 0, 0), Channel::Beta, &platform)
-                .unwrap()
-                .version,
+            manifest.best_update(&Version::new(1, 0, 0), Channel::Beta, &platform).unwrap().version,
             Version::new(2, 0, 0)
         );
     }
@@ -488,8 +483,7 @@ mod tests {
     #[test]
     fn downloaded_bytes_must_match_their_published_hash() {
         let bytes = b"the real release binary".to_vec();
-        let update =
-            Update::downloaded(bytes.clone(), hash(&bytes), Version::new(1, 0, 0));
+        let update = Update::downloaded(bytes.clone(), hash(&bytes), Version::new(1, 0, 0));
         assert!(update.verify().is_ok());
 
         let swapped = Update::downloaded(
@@ -554,8 +548,7 @@ mod tests {
         let patch = make_patch(&installed, &published);
         let patched = apply_patch(&installed, &patch).unwrap();
 
-        let update =
-            Update::downloaded(patched, hash(&published), Version::new(1, 1, 0));
+        let update = Update::downloaded(patched, hash(&published), Version::new(1, 1, 0));
         let verified = update.verify().unwrap();
         assert_eq!(verified.bytes(), published.as_slice());
     }

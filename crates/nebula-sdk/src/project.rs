@@ -51,7 +51,9 @@ impl Project {
     pub fn package_path(&self) -> PathBuf {
         self.root.join("target").join(format!(
             "{}-{}.{}",
-            self.manifest.id, self.manifest.version, nebula_pkg::PACKAGE_EXTENSION
+            self.manifest.id,
+            self.manifest.version,
+            nebula_pkg::PACKAGE_EXTENSION
         ))
     }
 
@@ -181,8 +183,8 @@ impl Project {
 
 /// Find the single `.wasm` artefact a build produced.
 fn find_component(directory: &Path) -> Result<PathBuf> {
-    let entries = std::fs::read_dir(directory)
-        .map_err(|_| SdkError::NoArtifact(directory.to_path_buf()))?;
+    let entries =
+        std::fs::read_dir(directory).map_err(|_| SdkError::NoArtifact(directory.to_path_buf()))?;
 
     let mut candidates: Vec<PathBuf> = entries
         .filter_map(std::result::Result::ok)
@@ -366,7 +368,8 @@ name = "Example Author"
         let reopened = Package::open_verified(&path, &[keys.public()]).unwrap();
         assert_eq!(reopened.contents.manifest.id, "com.example.formatter");
 
-        let report = nebula_pkg::notarize(&reopened.contents.manifest, &reopened.contents.component);
+        let report =
+            nebula_pkg::notarize(&reopened.contents.manifest, &reopened.contents.component);
         assert!(!report.verdict.is_rejected(), "{report:?}");
     }
 

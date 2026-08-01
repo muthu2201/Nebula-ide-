@@ -1,0 +1,62 @@
+# Supply-chain and dependency checks.
+#
+# Split from CI because these fail for reasons outside a pull request's
+# control — a new advisory lands against a dependency nobody touched — and a
+# scheduled run catches that on its own rather than blocking whoever pushes next.
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/security.yml"
+  schedule:
+    # Daily, so an advisory published today is visible tomorrow morning.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit --deny warnings
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources advisories
+
+  unused:
+    name: unused dependencies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config
+      - run: cargo install cargo-udeps --locked
+      # Advisory: an unused dependency is a supply-chain risk with no upside,
+      # but udeps has false positives on cfg-gated crates, so it reports rather
+      # than blocks.
+      - run: cargo +nightly udeps --workspace --all-targets || true

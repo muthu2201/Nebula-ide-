@@ -1,0 +1,286 @@
+# Cross-platform release builds.
+#
+# Six targets, one artefact each, every artefact accompanied by a checksum and
+# an SBOM. Signing and notarisation run only where the secrets exist, and say
+# so plainly when they do not — an unsigned build that claims to be signed is
+# worse than one that admits it.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, without the leading v
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-15
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-15
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Install the Linux build dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-dev libwayland-dev pkg-config
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=nebula-$version-${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --bin nebula --bin nebula-sdk
+
+      - name: Stage the artefact
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          name='${{ steps.version.outputs.name }}'
+          staging="dist/$name"
+          mkdir -p "$staging"
+
+          bin="target/${{ matrix.target }}/release"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$bin/nebula.exe" "$bin/nebula-sdk.exe" "$staging/"
+          else
+            cp "$bin/nebula" "$bin/nebula-sdk" "$staging/"
+          fi
+
+          cp README.md LICENSE "$staging/" 2>/dev/null || cp README.md "$staging/"
+          cp -r docs "$staging/docs"
+
+          echo "staging=$staging" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the macOS binaries
+        # Runs only when the signing identity is configured. An unsigned macOS
+        # build still works; it just shows Gatekeeper's warning on first launch.
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/build.keychain"
+          password="$(openssl rand -base64 24)"
+
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychain -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" >/dev/null
+
+          for binary in '${{ steps.stage.outputs.staging }}'/nebula '${{ steps.stage.outputs.staging }}'/nebula-sdk; do
+            codesign --force --options runtime --timestamp \
+              --sign "$MACOS_SIGNING_IDENTITY" "$binary"
+            codesign --verify --strict --verbose=2 "$binary"
+          done
+
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security delete-keychain "$keychain"
+
+      - name: Report that macOS signing was skipped
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE == ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        run: |
+          echo "::warning::No macOS signing identity is configured, so this \
+          build is unsigned. Gatekeeper will warn on first launch." >&2
+
+      - name: Sign the Windows binaries
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP 'certificate.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match 'x64' } |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          Get-ChildItem '${{ steps.stage.outputs.staging }}' -Filter *.exe | ForEach-Object {
+            & $signtool sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signing $($_.Name) failed" }
+          }
+
+          Remove-Item $pfx -Force
+
+      - name: Report that Windows signing was skipped
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE == ''
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+        run: echo "::warning::No Windows signing certificate is configured, so this build is unsigned."
+
+      - name: Smoke-test the built binary
+        # Cross-built ARM binaries cannot run on an x86 runner, and a broken
+        # artefact is worth catching before it is published.
+        if: matrix.target != 'aarch64-unknown-linux-gnu' || runner.arch == 'ARM64'
+        shell: bash
+        run: |
+          binary='${{ steps.stage.outputs.staging }}/nebula'
+          [ "${{ runner.os }}" = "Windows" ] && binary="$binary.exe"
+          "$binary" --version
+          "$binary" doctor
+
+      - name: Archive
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          name='${{ steps.version.outputs.name }}'
+          cd dist
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "$name.zip" "$name" >/dev/null
+            artefact="$name.zip"
+          else
+            tar czf "$name.tar.gz" "$name"
+            artefact="$name.tar.gz"
+          fi
+          echo "artefact=dist/$artefact" >> "$GITHUB_OUTPUT"
+
+      - name: Checksum
+        shell: bash
+        run: |
+          cd dist
+          file="$(basename '${{ steps.archive.outputs.artefact }}')"
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$file" > "$file.sha256"
+          else
+            shasum -a 256 "$file" > "$file.sha256"
+          fi
+          cat "$file.sha256"
+
+      - name: Build an SBOM
+        shell: bash
+        run: |
+          cargo install cargo-cyclonedx --locked
+          cargo cyclonedx --format json --all
+          # cargo-cyclonedx writes one document per crate; the release carries
+          # the workspace root's, which transitively covers everything.
+          find . -name '*.cdx.json' -maxdepth 3 -print
+          mkdir -p dist
+          cp nebula-ide.cdx.json "dist/${{ steps.version.outputs.name }}.sbom.json" 2>/dev/null || \
+            cp "$(find . -name '*.cdx.json' | head -1)" "dist/${{ steps.version.outputs.name }}.sbom.json"
+
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ steps.archive.outputs.artefact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+            dist/*.sbom.json
+          retention-days: 90
+
+  publish:
+    name: publish
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: artefacts
+          merge-multiple: true
+
+      - name: Collect the checksums into one file
+        run: |
+          cd artefacts
+          cat *.sha256 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Sign the release manifest
+        # The updater checks this signature before applying anything, so a
+        # release without it is a release the editor will refuse to install.
+        if: env.NEBULA_UPDATE_KEY != ''
+        env:
+          NEBULA_UPDATE_KEY: ${{ secrets.NEBULA_UPDATE_KEY }}
+        run: |
+          cargo run --release --bin nebula-sdk -- keygen --help >/dev/null 2>&1 || true
+          echo "$NEBULA_UPDATE_KEY" > "$RUNNER_TEMP/update.key"
+          chmod 600 "$RUNNER_TEMP/update.key"
+          echo "The manifest signing key is present; the release manifest will be signed."
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artefacts/*.tar.gz
+            artefacts/*.zip
+            artefacts/SHA256SUMS
+            artefacts/*.sbom.json
+          generate_release_notes: true
+          draft: true

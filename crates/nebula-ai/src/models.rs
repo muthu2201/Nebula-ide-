@@ -254,8 +254,7 @@ mod tests {
 
     #[test]
     fn cache_reads_are_a_tenth_of_the_input_rate() {
-        let uncached =
-            Usage { input_tokens: 1_000_000, ..Usage::default() };
+        let uncached = Usage { input_tokens: 1_000_000, ..Usage::default() };
         let cached = Usage { cache_read_tokens: 1_000_000, ..Usage::default() };
 
         let full = Model::Opus5.estimate_cost(&uncached);

@@ -1,0 +1,7 @@
+# Formatting is not a matter of taste here; it is a matter of not spending
+# review time on it.
+
+edition = "2024"
+max_width = 100
+use_small_heuristics = "Max"
+newline_style = "Unix"

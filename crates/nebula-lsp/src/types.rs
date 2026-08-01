@@ -214,10 +214,7 @@ mod tests {
 
         let position = Position::from_offset(&buffer, offset).unwrap();
         assert_eq!(position.line, 1);
-        assert_eq!(
-            position.character, 15,
-            "the emoji must count as two UTF-16 code units"
-        );
+        assert_eq!(position.character, 15, "the emoji must count as two UTF-16 code units");
         assert_eq!(position.to_offset(&buffer).unwrap(), offset);
     }
 
@@ -323,10 +320,7 @@ mod tests {
 
         let mut sorted = items.clone();
         sorted.sort_by(|a, b| a.sort_key().cmp(b.sort_key()));
-        assert_eq!(
-            sorted[0].label, "zebra",
-            "the server's ordering must win over alphabetical"
-        );
+        assert_eq!(sorted[0].label, "zebra", "the server's ordering must win over alphabetical");
     }
 
     #[test]
@@ -343,8 +337,7 @@ mod tests {
 
     #[test]
     fn a_non_file_uri_yields_no_path() {
-        let location =
-            Location { uri: "untitled:Untitled-1".to_string(), range: Range::default() };
+        let location = Location { uri: "untitled:Untitled-1".to_string(), range: Range::default() };
         assert_eq!(location.path(), None);
     }
 

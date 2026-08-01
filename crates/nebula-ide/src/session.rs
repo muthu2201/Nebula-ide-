@@ -175,9 +175,11 @@ impl Session {
                     Step::Open(PathBuf::from(rest))
                 }
                 "type" => Step::Type(unescape(rest)),
-                "key" => Step::Press(parse_key(rest).ok_or_else(|| {
-                    syntax(line, format!("`{rest}` is not a key I recognise"))
-                })?),
+                "key" => {
+                    Step::Press(parse_key(rest).ok_or_else(|| {
+                        syntax(line, format!("`{rest}` is not a key I recognise"))
+                    })?)
+                }
                 "repeat" => Step::Repeat(
                     rest.parse().map_err(|_| syntax(line, format!("`{rest}` is not a count")))?,
                 ),
@@ -222,11 +224,7 @@ impl Session {
     ///
     /// Relative paths in `open` are resolved against `root`, so a script is
     /// portable between a checkout and a temporary directory.
-    pub fn run(
-        &self,
-        app: &mut App,
-        root: &Path,
-    ) -> Result<SessionReport, ScriptError> {
+    pub fn run(&self, app: &mut App, root: &Path) -> Result<SessionReport, ScriptError> {
         let mut report = SessionReport::default();
         let started = Instant::now();
         let mut previous: Option<&Step> = None;
@@ -281,11 +279,8 @@ impl Session {
 
             Step::Type(text) => {
                 for c in text.chars() {
-                    let event = if c == '\n' {
-                        KeyEvent::new(Key::Enter)
-                    } else {
-                        KeyEvent::char(c)
-                    };
+                    let event =
+                        if c == '\n' { KeyEvent::new(Key::Enter) } else { KeyEvent::char(c) };
                     record(report, app.key(&event));
                     report.keystrokes += 1;
                 }
@@ -575,10 +570,7 @@ frame",
     fn repeat_with_nothing_before_it_is_a_script_error() {
         let session = Session::parse("repeat 3").unwrap();
         let dir = TempDir::new().unwrap();
-        assert!(matches!(
-            session.run(&mut app(), dir.path()),
-            Err(ScriptError::Syntax { .. })
-        ));
+        assert!(matches!(session.run(&mut app(), dir.path()), Err(ScriptError::Syntax { .. })));
     }
 
     #[test]

@@ -25,9 +25,8 @@ pub struct CpuRenderer {
 impl CpuRenderer {
     /// A renderer targeting `surface`.
     pub fn new(surface: Surface) -> Result<Self> {
-        let pixmap = Pixmap::new(surface.width, surface.height).ok_or(
-            RenderError::InvalidSize { width: surface.width, height: surface.height },
-        )?;
+        let pixmap = Pixmap::new(surface.width, surface.height)
+            .ok_or(RenderError::InvalidSize { width: surface.width, height: surface.height })?;
         Ok(Self { pixmap, surface, fonts: FontSystem::new() })
     }
 }
@@ -41,9 +40,8 @@ impl Renderer for CpuRenderer {
         if surface == self.surface {
             return Ok(());
         }
-        self.pixmap = Pixmap::new(surface.width, surface.height).ok_or(
-            RenderError::InvalidSize { width: surface.width, height: surface.height },
-        )?;
+        self.pixmap = Pixmap::new(surface.width, surface.height)
+            .ok_or(RenderError::InvalidSize { width: surface.width, height: surface.height })?;
         self.surface = surface;
         Ok(())
     }
@@ -54,9 +52,7 @@ impl Renderer for CpuRenderer {
 
     fn render(&mut self, scene: &Scene) -> Result<Framebuffer> {
         if !scene.clips_balanced() {
-            return Err(RenderError::Frame(
-                "the scene has unbalanced clip regions".to_string(),
-            ));
+            return Err(RenderError::Frame("the scene has unbalanced clip regions".to_string()));
         }
 
         let (width, height) = scene.device_size();
@@ -135,10 +131,7 @@ impl Renderer for CpuRenderer {
     }
 
     fn describe(&self) -> String {
-        format!(
-            "tiny-skia software rasteriser, {}x{}",
-            self.surface.width, self.surface.height
-        )
+        format!("tiny-skia software rasteriser, {}x{}", self.surface.width, self.surface.height)
     }
 }
 
@@ -326,9 +319,7 @@ mod tests {
             .text(TextRun::new(Point::new(2.0, 16.0), "Hello world", Color::WHITE, 14.0))
             .pop_clip();
 
-        let lit = |frame: &Framebuffer| {
-            frame.pixels.chunks_exact(4).filter(|p| p[0] > 40).count()
-        };
+        let lit = |frame: &Framebuffer| frame.pixels.chunks_exact(4).filter(|p| p[0] > 40).count();
         assert!(
             lit(&render(&clipped)) < lit(&render(&unclipped)),
             "a clip must reduce the text that is drawn"

@@ -95,12 +95,14 @@ impl StdioTransport {
         }
 
         let mut child = command.spawn()?;
-        let stdin = child.stdin.take().ok_or_else(|| {
-            McpError::Transport("child process has no stdin".to_string())
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            McpError::Transport("child process has no stdout".to_string())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| McpError::Transport("child process has no stdin".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| McpError::Transport("child process has no stdout".to_string()))?;
 
         // A server's stderr is diagnostics, not protocol. Draining it keeps the
         // child from blocking on a full pipe, and logging it is how a user finds
@@ -191,9 +193,7 @@ impl Transport for StdioTransport {
 
         match tokio::time::timeout(self.timeout, rx).await {
             Ok(Ok(response)) => Ok(response),
-            Ok(Err(_)) => {
-                Err(McpError::Transport("server closed the connection".to_string()))
-            }
+            Ok(Err(_)) => Err(McpError::Transport("server closed the connection".to_string())),
             Err(_) => {
                 self.pending.lock().remove(&id);
                 Err(McpError::Timeout(self.timeout))
@@ -273,17 +273,13 @@ impl StreamableHttpTransport {
             builder = builder.header(name, value);
         }
 
-        let response = builder
-            .json(request)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    McpError::Timeout(self.timeout)
-                } else {
-                    McpError::Transport(format!("request failed: {e}"))
-                }
-            })?;
+        let response = builder.json(request).send().await.map_err(|e| {
+            if e.is_timeout() {
+                McpError::Timeout(self.timeout)
+            } else {
+                McpError::Transport(format!("request failed: {e}"))
+            }
+        })?;
 
         let status = response.status();
         let content_type = response
@@ -430,13 +426,9 @@ mod tests {
 
     #[tokio::test]
     async fn stdio_transport_reports_a_missing_program() {
-        let result = StdioTransport::spawn(
-            "nebula-mcp-no-such-server",
-            &[],
-            &[],
-            Duration::from_secs(1),
-        )
-        .await;
+        let result =
+            StdioTransport::spawn("nebula-mcp-no-such-server", &[], &[], Duration::from_secs(1))
+                .await;
         assert!(result.is_err());
     }
 

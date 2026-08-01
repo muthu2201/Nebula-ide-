@@ -113,7 +113,13 @@ pub struct Layout {
 
 impl Layout {
     /// Compute a layout for a window of the given size.
-    pub fn new(width: f32, height: f32, line_height: f32, char_width: f32, total_lines: usize) -> Self {
+    pub fn new(
+        width: f32,
+        height: f32,
+        line_height: f32,
+        char_width: f32,
+        total_lines: usize,
+    ) -> Self {
         // The gutter is sized to the widest line number the file can produce,
         // so it does not resize as the user scrolls past line 999.
         let digits = total_lines.max(1).to_string().len().max(3);
@@ -181,9 +187,15 @@ impl Layout {
     }
 
     /// Where a document position lands on screen.
-    pub fn position_of(&self, line: usize, column: usize, viewport: &Viewport) -> nebula_render::Point {
+    pub fn position_of(
+        &self,
+        line: usize,
+        column: usize,
+        viewport: &Viewport,
+    ) -> nebula_render::Point {
         nebula_render::Point::new(
-            self.gutter_width + (column.saturating_sub(viewport.first_column)) as f32 * self.char_width,
+            self.gutter_width
+                + (column.saturating_sub(viewport.first_column)) as f32 * self.char_width,
             (line.saturating_sub(viewport.first_line)) as f32 * self.line_height,
         )
     }
@@ -197,7 +209,8 @@ impl Layout {
         let column = if x <= self.gutter_width {
             viewport.first_column
         } else {
-            viewport.first_column + ((x - self.gutter_width) / self.char_width).max(0.0).round() as usize
+            viewport.first_column
+                + ((x - self.gutter_width) / self.char_width).max(0.0).round() as usize
         };
         (line, column)
     }
