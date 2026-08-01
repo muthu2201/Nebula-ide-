@@ -228,8 +228,21 @@ impl Policy {
     /// This is the profile that runs `cargo test` on the user's behalf.
     pub fn project_tool(project_root: impl AsRef<Path>) -> Policy {
         let root = project_root.as_ref().to_path_buf();
-        let mut builder =
-            Policy::builder().label("project-tool").write(&root).network(NetworkAccess::Denied);
+        // Exec on the project, not only write. A build's whole purpose is to
+        // produce a binary and then run it — `cc -o sieve sieve.c && ./sieve`
+        // — and with write alone the second half is refused:
+        //
+        //     sandbox-exec: execvp() of '…/nebula-fixture-sieve' failed
+        //
+        // Nothing is given away by this that write did not already give. A
+        // process that can write an executable into the project and can run
+        // *anything* at all can already run what it wrote, by any of a dozen
+        // routes; refusing this one only breaks compilers.
+        let mut builder = Policy::builder()
+            .label("project-tool")
+            .write(&root)
+            .exec(&root)
+            .network(NetworkAccess::Denied);
 
         // Toolchains read their own installation; denying that makes every
         // build fail. Where "their own installation" *is* differs by platform,
@@ -654,6 +667,14 @@ mod tests {
         assert!(!policy.allows_write(Path::new("/usr")), "the toolchain must not be writable");
         assert!(!policy.allows_write(Path::new("/etc")), "system config must not be writable");
         assert_eq!(policy.network, NetworkAccess::Denied);
+
+        // A build produces a binary and then runs it. Granting write without
+        // exec leaves the second half refused, which is how the C fixture
+        // failed after it had compiled successfully.
+        assert!(
+            policy.exec_paths.iter().any(|granted| dir.path().starts_with(granted)),
+            "a build must be able to run what it just compiled"
+        );
     }
 
     #[test]
