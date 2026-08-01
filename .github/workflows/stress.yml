@@ -110,6 +110,20 @@ jobs:
             --json "stress-results/${{ matrix.os }}-${{ matrix.renderer }}.json" \
             --markdown "stress-results/${{ matrix.os }}-${{ matrix.renderer }}.md"
 
+      # The six programs exercise far more of the profile than the unit tests
+      # do — six different toolchains, each linking its own libraries — so the
+      # kernel's denial log is richer here than anywhere else. A sandboxed
+      # program that dies before `main` writes nothing to either stream, and
+      # this is the only place the reason exists.
+      - name: Show what Seatbelt refused
+        if: failure() && matrix.os == 'macos-15'
+        shell: bash
+        run: |
+          log show --last 20m --style compact \
+            --predicate 'eventMessage CONTAINS "Sandbox" OR eventMessage CONTAINS "deny("' \
+            2>/dev/null | head -200 \
+            || echo "the unified log is unavailable on this runner"
+
       - name: Add the report to the job summary
         if: always()
         shell: bash

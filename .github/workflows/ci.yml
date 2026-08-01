@@ -114,6 +114,26 @@ jobs:
           RUST_BACKTRACE: ${{ startsWith(matrix.os, 'ubuntu') && '1' || '0' }}
         run: cargo test --workspace --all-features
 
+      - name: Show what Seatbelt refused
+        if: always() && matrix.os == 'macos-15'
+        run: |
+          # A process the sandbox kills dies before `main` and writes nothing
+          # to either stream, so the failure carries no reason. The kernel logs
+          # one — "Sandbox: sh(123) deny(1) file-read-data /path" — to the
+          # unified log and nowhere else.
+          #
+          # This step exists because two separate rounds of reasoning about
+          # which paths dyld needs both looked sound and both changed nothing.
+          # The profile printed by the test failures shows `/usr`,
+          # `/System/Library` and both cryptex paths granted, and `/bin/sh`
+          # still aborts, so the missing rule is not one that can be predicted
+          # from reading the profile. Reading it beats guessing at it a third
+          # time.
+          log show --last 20m --style compact \
+            --predicate 'eventMessage CONTAINS "Sandbox" OR eventMessage CONTAINS "deny("' \
+            2>/dev/null | head -200 \
+            || echo "the unified log is unavailable on this runner"
+
       - name: Check that the headless build stands alone
         run: cargo check -p nebula-ide --no-default-features
 

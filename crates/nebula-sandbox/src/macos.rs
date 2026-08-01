@@ -81,6 +81,22 @@ pub fn build_profile(policy: &Policy) -> Result<String> {
     profile.push_str("(allow mach-lookup)\n");
     profile.push_str("(allow file-read-metadata)\n");
 
+    // libSystem's initialisers run before `main` and use both of these: the
+    // notification centre is a POSIX shared-memory segment, and a process
+    // signalling itself is how several of them report failure. Under
+    // `(deny default)` neither is available unless it is named, and what a
+    // process does when its own startup is refused is abort.
+    //
+    // Neither grants any filesystem access, and neither reaches another
+    // process: `signal` is scoped to `self`. They are here because a
+    // deny-by-default profile has to name the primitives a process is built
+    // on, not because either has been shown to be the missing one — the
+    // profile emitted by the failing tests looks complete on the file rules
+    // and every program still aborts, so the CI step that dumps the kernel's
+    // own denial log is what will actually settle it.
+    profile.push_str("(allow ipc-posix-shm*)\n");
+    profile.push_str("(allow signal (target self))\n");
+
     // Mapping a file's pages as executable is a *separate* Seatbelt operation
     // from reading it, and dyld does both: it opens the shared cache and the
     // linked dylibs, then maps them executable before `main` runs. A profile
