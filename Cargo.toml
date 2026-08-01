@@ -97,7 +97,7 @@ cosmic-text = "0.19"
 tiny-skia = "0.12"
 raw-window-handle = "0.6"
 bytemuck = { version = "1.24", features = ["derive"] }
-pollster = "0.4"
+pollster = "1.0"
 etagere = "0.2"
 
 # --- net / http ---
