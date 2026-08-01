@@ -262,9 +262,34 @@ impl Command {
             }
         };
 
+        // macOS confines by wrapping, not in `pre_exec`. `sandbox_init` compiles
+        // a TinyScheme profile and allocates heavily, and the `pre_exec` closure
+        // runs in the forked child of a multithreaded runtime, where only
+        // async-signal-safe calls are legal. macOS libmalloc detects the
+        // violation and aborts: every dynamically linked program in the stress
+        // run died on SIGABRT before `main`, whatever the profile contained,
+        // which is why widening the read paths and granting `file-map-executable`
+        // both changed nothing. `sandbox-exec` applies the identical profile in
+        // a fresh single-threaded process after `exec`, where building one is
+        // safe. Linux is untouched: Landlock and seccomp are raw syscalls and
+        // are legal exactly where they already are.
+        #[cfg(target_os = "macos")]
+        let (resolved, spawn_args) = match &self.policy {
+            Some(policy) => {
+                let profile = nebula_sandbox::macos::build_profile(policy)
+                    .map_err(|e| ExecError::SandboxRefused(e.to_string()))?;
+                let mut args = vec!["-p".to_string(), profile, resolved.display().to_string()];
+                args.extend(self.args.iter().cloned());
+                (PathBuf::from("/usr/bin/sandbox-exec"), args)
+            }
+            None => (resolved, self.args.clone()),
+        };
+        #[cfg(not(target_os = "macos"))]
+        let spawn_args = self.args.clone();
+
         let mut command = tokio::process::Command::new(&resolved);
         command
-            .args(&self.args)
+            .args(&spawn_args)
             .stdin(if self.stdin.is_some() { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -291,6 +316,9 @@ impl Command {
         #[cfg(unix)]
         {
             let limits = self.limits.clone();
+            // Not on macOS: the wrapper above owns confinement there, and an
+            // unused binding would be the only trace left of it.
+            #[cfg(not(target_os = "macos"))]
             let policy = self.policy.clone();
             // SAFETY: this closure runs in the forked child between `fork` and
             // `exec`. It performs syscalls only (`setsid`, `setrlimit`,
@@ -308,6 +336,10 @@ impl Command {
                     }
                     limits.apply_to_current_process()?;
 
+                    // macOS is deliberately absent: its policy was applied by
+                    // the `sandbox-exec` wrapper chosen above, because
+                    // `sandbox_init` is not async-signal-safe and aborts here.
+                    #[cfg(not(target_os = "macos"))]
                     if let Some(policy) = &policy {
                         match nebula_sandbox::apply(policy) {
                             Ok(_) => {}
