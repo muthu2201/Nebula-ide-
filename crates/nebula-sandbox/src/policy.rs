@@ -316,7 +316,18 @@ impl Policy {
         }
         // `temp_dir` reads TMPDIR, TMP and TEMP as the platform expects, and
         // returns a real absolute path on all of them.
-        builder = builder.write(std::env::temp_dir());
+        //
+        // Exec as well as write, for the reason the project root gets both: a
+        // build produces a binary and then runs it, and `go run` does that
+        // here rather than in the project —
+        //
+        //     go(49884) deny(1) process-exec*
+        //       /private/var/folders/…/T/go-build729060368/b001/exe/main
+        //
+        // Writable-but-not-executable is not a boundary anything respects. A
+        // process that can write into the temporary directory and start any
+        // program at all can already run what it put there.
+        builder = builder.exec(std::env::temp_dir()).write(std::env::temp_dir());
         builder.build()
     }
 
