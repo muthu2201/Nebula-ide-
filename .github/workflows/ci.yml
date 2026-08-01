@@ -82,19 +82,24 @@ jobs:
       - name: Use the software Vulkan driver
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          # lavapipe gives the GPU backend a real adapter on a headless runner,
-          # so the wgpu path is exercised rather than skipped. The ICD file is
-          # named after the architecture: hardcoding the x86_64 name matched
-          # nothing on the arm runner, and NEBULA_REQUIRE_GPU then demanded an
-          # adapter that had never been configured, turning what should have
-          # been a skip into nine failures. Only require a GPU once one is
-          # actually there.
+          # lavapipe gives the GPU backend a real adapter on a headless
+          # runner, so the wgpu path is exercised rather than skipped.
+          #
+          # Whether that worked is checked rather than assumed. The previous
+          # attempt exported NEBULA_REQUIRE_GPU whenever an ICD file was
+          # present, which is a proxy for "an adapter exists" and not the same
+          # thing — the arm runner had no matching ICD at all, and the flag
+          # turned nine legitimate skips into failures. Ask Vulkan instead.
           icd="/usr/share/vulkan/icd.d/lvp_icd.$(uname -m).json"
           if [ -f "$icd" ]; then
             echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+            export VK_ICD_FILENAMES="$icd"
+          fi
+          if vulkaninfo --summary 2>/dev/null | grep -q "deviceName"; then
             echo "NEBULA_REQUIRE_GPU=1" >> "$GITHUB_ENV"
+            echo "a Vulkan device is present; the GPU tests must run"
           else
-            echo "no lavapipe ICD at $icd — the GPU tests will skip"
+            echo "no Vulkan device; the GPU tests will skip"
           fi
 
       - run: cargo test --workspace --all-features

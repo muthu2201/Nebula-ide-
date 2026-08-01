@@ -168,9 +168,9 @@ fn programs() -> Vec<Program> {
                 "-O".into(),
                 "src/main.rs".into(),
                 "-o".into(),
-                "nebula-fixture-rust".into(),
+                compiled_binary("nebula-fixture-rust"),
             ]),
-            run: vec!["./nebula-fixture-rust".into()],
+            run: vec![invoke_local(&compiled_binary("nebula-fixture-rust"))],
             expect: "area=78.54 mean=3.00 stddev=1.41",
             requires: "rustc",
         },
@@ -205,10 +205,10 @@ fn programs() -> Vec<Program> {
                 "cc".into(),
                 "-O2".into(),
                 "-o".into(),
-                "nebula-fixture-sieve".into(),
+                compiled_binary("nebula-fixture-sieve"),
                 "native/sieve.c".into(),
             ]),
-            run: vec!["./nebula-fixture-sieve".into()],
+            run: vec![invoke_local(&compiled_binary("nebula-fixture-sieve"))],
             expect: "primes below 1000: 168",
             requires: "cc",
         },
@@ -221,6 +221,23 @@ fn programs() -> Vec<Program> {
             requires: "sh",
         },
     ]
+}
+
+/// The name a compiler writes a binary to, on this platform.
+///
+/// Windows appends `.exe`, and the stress run failed there with "program
+/// `./nebula-fixture-sieve` was not found" — the compiler had written
+/// `nebula-fixture-sieve.exe` while the fixture went looking for the Unix name.
+fn compiled_binary(stem: &str) -> String {
+    format!("{stem}{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// How to invoke a binary sitting in the working directory.
+///
+/// `./name` is a Unix idiom. Windows resolves a bare relative name against the
+/// current directory already and does not treat `./` as part of a program name.
+fn invoke_local(binary: &str) -> String {
+    if cfg!(windows) { binary.to_string() } else { format!("./{binary}") }
 }
 
 /// A large, valid Rust file.
