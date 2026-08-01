@@ -230,7 +230,7 @@ jobs:
             cp "$(find . -name '*.cdx.json' | head -1)" "dist/${{ steps.version.outputs.name }}.sbom.json"
 
       - name: Attest the build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.archive.outputs.artefact }}
 
