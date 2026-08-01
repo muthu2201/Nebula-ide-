@@ -110,6 +110,34 @@ pub fn system_read_directories() -> Vec<PathBuf> {
     dirs
 }
 
+/// Whether a granted directory contains `resolved`, an already-resolved path.
+///
+/// Both sides have to be resolved or the answer is wrong wherever a symlink
+/// stands between the two spellings. `allows_read` resolved only the path being
+/// asked about and compared it against the grant as written, so on macOS —
+/// where the temporary directory is `/var/folders/…`, a symlink to
+/// `/private/var/folders/…` — a policy reported that it did not grant read of
+/// the very directory it had just been handed:
+///
+/// ```text
+/// assertion failed: policy.allows_read(dir.path())
+/// ```
+///
+/// The error is toward refusing, so it was never a hole in the sandbox; it is
+/// a public predicate returning the wrong answer, which is enough. The
+/// unresolved comparison is tried first because it is the common case and
+/// costs no syscall, and because it is the only one that can succeed for a
+/// path that does not exist yet.
+fn covers(granted: &Path, resolved: &Path) -> bool {
+    if resolved.starts_with(granted) {
+        return true;
+    }
+    match std::fs::canonicalize(granted) {
+        Ok(granted) => resolved.starts_with(granted),
+        Err(_) => false,
+    }
+}
+
 /// The directories on `PATH`, in order, skipping empty and relative entries.
 ///
 /// Relative entries are dropped because a sandbox rule has to name a fixed
@@ -241,16 +269,13 @@ impl Policy {
     /// checks; it is not itself an enforcement mechanism.
     pub fn allows_read(&self, path: &Path) -> bool {
         let path = crate::resolve(path).unwrap_or_else(|_| path.to_path_buf());
-        self.read_paths
-            .iter()
-            .chain(self.write_paths.iter())
-            .any(|allowed| path.starts_with(allowed))
+        self.read_paths.iter().chain(self.write_paths.iter()).any(|allowed| covers(allowed, &path))
     }
 
     /// Whether `path` is writable under this policy.
     pub fn allows_write(&self, path: &Path) -> bool {
         let path = crate::resolve(path).unwrap_or_else(|_| path.to_path_buf());
-        self.write_paths.iter().any(|allowed| path.starts_with(allowed))
+        self.write_paths.iter().any(|allowed| covers(allowed, &path))
     }
 
     /// Check the policy is coherent.
@@ -475,6 +500,34 @@ mod tests {
         let policy = Policy::builder().write(dir.path()).build();
         assert!(policy.allows_write(&dir.path().join("src/main.rs")));
         assert!(!policy.allows_write(Path::new("/etc/passwd")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_grant_written_through_a_symlink_still_covers_what_it_points_at() {
+        // macOS hands out `/var/folders/…` for the temporary directory and
+        // `/var` is a symlink to `/private/var`, so every policy built around
+        // a temp dir has a grant on one side of a link and questions arriving
+        // from the other. Five policy tests failed on macOS for this and none
+        // could on Linux, where `/tmp` is a real directory.
+        let dir = TempDir::new().unwrap();
+        let real = dir.path().join("real");
+        let link = dir.path().join("link");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("file.txt"), b"").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let policy = Policy::builder().write(&link).build();
+        assert!(policy.allows_write(&link), "the granted path itself must be covered");
+        assert!(
+            policy.allows_write(&link.join("file.txt")),
+            "a file under the granted path must be covered whichever name reaches it"
+        );
+        assert!(
+            policy.allows_write(&real.join("file.txt")),
+            "the same file by its resolved name is the same file"
+        );
+        assert!(!policy.allows_write(Path::new("/etc/passwd")), "and nothing else is");
     }
 
     #[test]
