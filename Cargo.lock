@@ -443,6 +443,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+
+[[package]]
 name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2277,7 +2283,7 @@ version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -3098,7 +3104,7 @@ dependencies = [
 name = "nebula-license"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.23.0",
  "blake3",
  "ed25519-dalek",
  "hmac",
@@ -3154,7 +3160,7 @@ dependencies = [
 name = "nebula-pkg"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.23.0",
  "blake3",
  "ed25519-dalek",
  "flate2",
@@ -3178,7 +3184,7 @@ name = "nebula-registry"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64",
+ "base64 0.23.0",
  "blake3",
  "clap",
  "nebula-pkg",
@@ -3352,7 +3358,7 @@ name = "nebula-update"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64",
+ "base64 0.23.0",
  "blake3",
  "ed25519-dalek",
  "rand 0.9.5",
@@ -4617,7 +4623,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04e9018c9d814e5f30cc16a0f03271aeab3571e609612d9fe78c1aa8d11c2f62"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -6335,7 +6341,7 @@ version = "47.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65db2eb1bfc5371a3b4107dbf539d0b93d05016fc29625b1648146b47db02071"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "directories-next",
  "log",
  "postcard",
