@@ -254,6 +254,10 @@ fn quote_scheme(value: &str) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    // Gated with the tests that use it. Both `TempDir` call sites are in
+    // Unix-only tests, so on Windows the import is unused, and `-D warnings`
+    // turns an unused import into a failed build rather than a warning.
+    #[cfg(unix)]
     use tempfile::TempDir;
 
     #[test]
