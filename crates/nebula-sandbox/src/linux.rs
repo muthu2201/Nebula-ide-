@@ -174,40 +174,58 @@ fn apply_landlock(policy: &Policy, abi: ABI) -> Result<RulesetStatus> {
     Ok(status.ruleset)
 }
 
-/// Install a seccomp filter that refuses socket creation and connection.
+/// Install a seccomp filter that stops the process opening a network socket.
 ///
-/// The filter allows everything by default and returns `EPERM` for the network
-/// syscalls. `EPERM` rather than killing the process: a build tool that tries
-/// to check for updates should fail that one call and carry on compiling, not
-/// die with SIGSYS.
+/// ## Why this filters by address family rather than by syscall
+///
+/// The obvious filter — deny `socket`, `connect`, `sendto` and friends outright
+/// — breaks ordinary process spawning. Rust's standard library creates the
+/// CLOEXEC pipe it uses to report exec failures with `socketpair(AF_UNIX, …)`,
+/// so a blanket denial makes `Command::spawn` fail with `EPERM` inside every
+/// child. In practice that means `rustc` cannot invoke its linker and no build
+/// tool works at all under the sandbox.
+///
+/// So the filter allows `socket` and `socketpair` for `AF_UNIX` and refuses
+/// every other family. Nothing else needs blocking: a process that cannot
+/// *create* an `AF_INET` socket cannot connect, bind or send on one either, and
+/// leaving `connect` alone means local Unix-socket IPC — which a language
+/// server or a build tool may legitimately use — keeps working.
+///
+/// `EPERM` rather than killing the process: a build tool that probes for an
+/// update should fail that one call and carry on compiling, not die on SIGSYS.
 fn deny_network_syscalls() -> std::result::Result<(), String> {
-    use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, SeccompRule, TargetArch};
+    use seccompiler::{
+        BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition,
+        SeccompFilter, SeccompRule,
+    };
 
     let arch = current_target_arch()?;
 
-    // An empty rule vector means "match this syscall unconditionally".
-    let denied: Vec<(i64, Vec<SeccompRule>)> = vec![
-        (libc::SYS_socket, vec![]),
-        (libc::SYS_socketpair, vec![]),
-        (libc::SYS_connect, vec![]),
-        (libc::SYS_bind, vec![]),
-        (libc::SYS_listen, vec![]),
-        (libc::SYS_accept4, vec![]),
-        (libc::SYS_sendto, vec![]),
-        (libc::SYS_recvfrom, vec![]),
-        (libc::SYS_sendmsg, vec![]),
-        (libc::SYS_recvmsg, vec![]),
-        (libc::SYS_getpeername, vec![]),
-        (libc::SYS_setsockopt, vec![]),
-    ];
+    // Matches when the address family argument is anything but AF_UNIX.
+    let non_unix_family = || -> std::result::Result<SeccompRule, String> {
+        let condition = SeccompCondition::new(
+            0,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Ne,
+            libc::AF_UNIX as u64,
+        )
+        .map_err(|e| format!("building the address-family condition: {e}"))?;
 
-    let rules: BTreeMap<i64, Vec<SeccompRule>> = denied.into_iter().collect();
+        SeccompRule::new(vec![condition])
+            .map_err(|e| format!("building the address-family rule: {e}"))
+    };
+
+    let rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::from([
+        (libc::SYS_socket, vec![non_unix_family()?]),
+        (libc::SYS_socketpair, vec![non_unix_family()?]),
+    ]);
 
     let filter = SeccompFilter::new(
         rules,
-        // Anything not listed runs normally.
+        // Anything not listed, and any listed syscall whose rule does not
+        // match, runs normally.
         SeccompAction::Allow,
-        // Anything listed fails with EPERM.
+        // A matching rule — a non-AF_UNIX socket — fails with EPERM.
         SeccompAction::Errno(libc::EPERM as u32),
         arch,
     )
@@ -217,7 +235,6 @@ fn deny_network_syscalls() -> std::result::Result<(), String> {
         filter.try_into().map_err(|e| format!("compiling seccomp filter: {e}"))?;
 
     seccompiler::apply_filter(&program).map_err(|e| format!("installing seccomp filter: {e}"))?;
-    let _: fn() -> std::result::Result<TargetArch, String> = current_target_arch;
     Ok(())
 }
 

@@ -733,7 +733,7 @@ mod tests {
     fn recall_against_exhaustive_search_is_high() {
         // The headline quality property: the approximate graph must find
         // essentially the same neighbours as a brute-force scan.
-        let (index, data) = build(2_000, 64, Metric::Cosine);
+        let (index, _data) = build(2_000, 64, Metric::Cosine);
         let k = 10;
         let queries = vectors(50, 64, 99);
 

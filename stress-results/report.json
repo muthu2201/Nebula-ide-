@@ -1,0 +1,259 @@
+{
+  "timestamp": "2026-08-01T04:36:27Z",
+  "version": "0.1.0",
+  "renderer": "CPU (software)",
+  "renderer_reason": "using the software backend because the GPU was unavailable: no usable GPU adapter: No suitable graphics adapter found; noop support not compiled in, vulkan drivers/libraries could not be loaded, metal support not compiled in, dx12 support not compiled in, gl drivers/libraries could not be loaded, webgpu support not compiled in",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "cpus": 4,
+    "sandbox": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)",
+    "sandbox_enforced": false
+  },
+  "budgets": {
+    "keystroke_to_photon_gpu_ms": 8.0,
+    "keystroke_to_photon_cpu_ms": 16.0,
+    "cold_start_ms": 500.0
+  },
+  "fixture": {
+    "root": "/tmp/claude-0/-home-user-Nebula-ide-/152668e6-b6fe-5f4d-8973-7807cd049ff5/scratchpad/fixture",
+    "files": 16,
+    "lines": 300322,
+    "programs": 6
+  },
+  "phases": [
+    {
+      "name": "cold-start",
+      "measurements": [
+        {
+          "name": "time-to-first-frame",
+          "elapsed": 14.096624,
+          "budget": 500.0
+        }
+      ],
+      "notes": [
+        "CPU (software) renderer"
+      ],
+      "failures": [],
+      "elapsed": 14.096624,
+      "skipped": false
+    },
+    {
+      "name": "editing",
+      "measurements": [
+        {
+          "name": "keystroke-to-photon-p50",
+          "elapsed": 7.318647,
+          "budget": 16.0
+        },
+        {
+          "name": "keystroke-to-photon-p95",
+          "elapsed": 11.00262,
+          "budget": 16.0
+        },
+        {
+          "name": "keystroke-to-photon-p99",
+          "elapsed": 12.552623
+        },
+        {
+          "name": "keystroke-to-photon-worst",
+          "elapsed": 18.66209
+        },
+        {
+          "name": "64-cursor-edit",
+          "elapsed": 5.6579120000000005
+        },
+        {
+          "name": "undo-507-steps",
+          "elapsed": 16.402787
+        }
+      ],
+      "notes": [
+        "5000 keystrokes, each followed by a full frame"
+      ],
+      "failures": [],
+      "elapsed": 37998.733746,
+      "skipped": false
+    },
+    {
+      "name": "large-file",
+      "measurements": [
+        {
+          "name": "open",
+          "elapsed": 1262.387917
+        },
+        {
+          "name": "first-frame",
+          "elapsed": 11.027722
+        },
+        {
+          "name": "scroll-frame-p95",
+          "elapsed": 7.8723600000000005,
+          "budget": 16.0
+        },
+        {
+          "name": "scroll-frame-worst",
+          "elapsed": 9.130922
+        },
+        {
+          "name": "keystroke-to-photon-p95",
+          "elapsed": 6.158686,
+          "budget": 16.0
+        },
+        {
+          "name": "keystroke-to-photon-worst",
+          "elapsed": 8.127846
+        }
+      ],
+      "notes": [
+        "300007 lines, 7748759 characters"
+      ],
+      "failures": [],
+      "elapsed": 5797.326294,
+      "skipped": false
+    },
+    {
+      "name": "indexing",
+      "measurements": [
+        {
+          "name": "walk",
+          "elapsed": 1.051059
+        },
+        {
+          "name": "repo-map",
+          "elapsed": 3379.119135
+        },
+        {
+          "name": "content-search",
+          "elapsed": 2.360668
+        },
+        {
+          "name": "embed",
+          "elapsed": 2291.455236
+        },
+        {
+          "name": "hnsw-build",
+          "elapsed": 0.110466
+        },
+        {
+          "name": "hnsw-query",
+          "elapsed": 0.016936
+        }
+      ],
+      "notes": [
+        "15 files",
+        "10 ranked files, 1007 bytes rendered",
+        "1007 matches for `pub fn`",
+        "15 vectors indexed"
+      ],
+      "failures": [],
+      "elapsed": 5674.149546,
+      "skipped": false
+    },
+    {
+      "name": "programs",
+      "measurements": [
+        {
+          "name": "rust-total",
+          "elapsed": 304.059826
+        },
+        {
+          "name": "python-total",
+          "elapsed": 62.271239
+        },
+        {
+          "name": "javascript-total",
+          "elapsed": 67.494144
+        },
+        {
+          "name": "go-total",
+          "elapsed": 73.477665
+        },
+        {
+          "name": "c-total",
+          "elapsed": 94.30049799999999
+        },
+        {
+          "name": "bash-total",
+          "elapsed": 23.180562
+        }
+      ],
+      "notes": [
+        "6 of 6 programs built and ran"
+      ],
+      "failures": [],
+      "elapsed": 625.1561479999999,
+      "skipped": false
+    },
+    {
+      "name": "durability",
+      "measurements": [],
+      "notes": [
+        "2 files saved and verified, 11 re-parsed"
+      ],
+      "failures": [],
+      "elapsed": 196.95979499999999,
+      "skipped": false
+    }
+  ],
+  "programs": [
+    {
+      "language": "rust",
+      "command": "./nebula-fixture-rust",
+      "build": 277.73830799999996,
+      "run": 26.321517999999998,
+      "output": "area=78.54 mean=3.00 stddev=1.41",
+      "passed": true,
+      "skipped": false,
+      "note": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)"
+    },
+    {
+      "language": "python",
+      "command": "python3 scripts/analyse.py",
+      "run": 62.271239,
+      "output": "records=5 total=150 mean=30.0",
+      "passed": true,
+      "skipped": false,
+      "note": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)"
+    },
+    {
+      "language": "javascript",
+      "command": "node web/index.js",
+      "run": 67.494144,
+      "output": "primes<50=15 sum=328",
+      "passed": true,
+      "skipped": false,
+      "note": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)"
+    },
+    {
+      "language": "go",
+      "command": "go run cmd/report/main.go",
+      "run": 73.477665,
+      "output": "lines=4 words=21 longest=comprehensive",
+      "passed": true,
+      "skipped": false,
+      "note": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)"
+    },
+    {
+      "language": "c",
+      "command": "./nebula-fixture-sieve",
+      "build": 69.971099,
+      "run": 24.329399000000002,
+      "output": "primes below 1000: 168",
+      "passed": true,
+      "skipped": false,
+      "note": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)"
+    },
+    {
+      "language": "bash",
+      "command": "sh scripts/summary.sh",
+      "run": 23.180562,
+      "output": "sources=12",
+      "passed": true,
+      "skipped": false,
+      "note": "Linux (Landlock unavailable; kernel older than 5.13 or disabled)"
+    }
+  ],
+  "elapsed": 50330.858477,
+  "passed": true
+}

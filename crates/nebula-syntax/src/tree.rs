@@ -75,11 +75,57 @@ impl SyntaxTree {
         self.tree.root_node().has_error()
     }
 
-    /// Tell tree-sitter about an applied transaction, then re-parse.
+    /// Tell tree-sitter where an applied transaction moved things, without
+    /// re-parsing.
     ///
-    /// The two steps are separate in tree-sitter's API but there is no valid
-    /// reason to do one without the other, so they are fused here: forgetting
-    /// the `edit` call is the classic way to get a silently corrupt tree.
+    /// This is the cheap half of an incremental update: it shifts the existing
+    /// nodes' offsets so the tree still describes the new text everywhere the
+    /// edit did not touch. Highlighting stays visually correct against it, which
+    /// is what lets the expensive half be deferred.
+    ///
+    /// Leaves the tree marked stale. Nothing else here re-parses, so a caller
+    /// that only ever calls this will highlight increasingly stale syntax —
+    /// pair it with [`SyntaxTree::reparse_incremental`].
+    pub fn edit(
+        &mut self,
+        buffer_before: &TextBuffer,
+        buffer_after: &TextBuffer,
+        transaction: &nebula_core::Transaction,
+    ) -> Result<()> {
+        for edit in transaction.edits() {
+            let input_edit = to_input_edit(buffer_before, buffer_after, edit, transaction)?;
+            self.tree.edit(&input_edit);
+        }
+        Ok(())
+    }
+
+    /// Re-parse, reusing everything the previous tree still describes.
+    ///
+    /// Must follow [`SyntaxTree::edit`] for every intervening change, or
+    /// tree-sitter reuses subtrees that no longer match the text and the result
+    /// is a silently wrong tree.
+    ///
+    /// ## Why this is not on the keystroke path
+    ///
+    /// "Incremental" bounds the work by how much of the *tree* changed, not by
+    /// how much of the text did. A single character typed into a file with
+    /// fifty thousand top-level items forces the root's child list to be
+    /// rebuilt, which measures at roughly 150 ms on a 300 000-line file — an
+    /// order of magnitude over the whole frame budget. So the editor paints
+    /// from the edited-but-stale tree and calls this once typing pauses.
+    pub fn reparse_incremental(&mut self, buffer: &TextBuffer, version: u64) -> Result<()> {
+        self.tree = parse_buffer(&mut self.parser, buffer, Some(&self.tree))
+            .ok_or_else(|| SyntaxError::ParseFailed(self.grammar.language_id.clone()))?;
+        self.version = version;
+        Ok(())
+    }
+
+    /// Apply a transaction and re-parse in one step.
+    ///
+    /// The two are separate operations with very different costs, so prefer
+    /// [`SyntaxTree::edit`] plus a deferred [`SyntaxTree::reparse_incremental`]
+    /// anywhere a frame is waiting. This is for callers that want the tree
+    /// correct immediately and are not on the keystroke path.
     pub fn apply(
         &mut self,
         buffer_before: &TextBuffer,
@@ -87,16 +133,8 @@ impl SyntaxTree {
         transaction: &nebula_core::Transaction,
         new_version: u64,
     ) -> Result<()> {
-        for edit in transaction.edits() {
-            let input_edit = to_input_edit(buffer_before, buffer_after, edit, transaction)?;
-            self.tree.edit(&input_edit);
-        }
-
-        let new_tree = parse_buffer(&mut self.parser, buffer_after, Some(&self.tree))
-            .ok_or_else(|| SyntaxError::ParseFailed(self.grammar.language_id.clone()))?;
-        self.tree = new_tree;
-        self.version = new_version;
-        Ok(())
+        self.edit(buffer_before, buffer_after, transaction)?;
+        self.reparse_incremental(buffer_after, new_version)
     }
 
     /// Re-parse from scratch, discarding incremental state.

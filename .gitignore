@@ -20,5 +20,7 @@ Thumbs.db
 *~
 
 # Stress-test and benchmark output
-/stress-results/
+# The committed stress report is the evidence that the editor works; only the
+# generated fixture project it runs against is disposable.
+/stress-results/fixture/
 /target/criterion/

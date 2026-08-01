@@ -1,7 +1,7 @@
 //! Sandboxed process execution.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
@@ -202,20 +202,49 @@ impl Command {
         out
     }
 
+    /// Find the executable this command names.
+    ///
+    /// A program with a path separator in it — `./build.sh`, `target/release/x`
+    /// — is relative to the command's working directory, not to whatever
+    /// directory the editor happens to be running in. Handing it straight to
+    /// `which` resolves it against the wrong place and reports a perfectly
+    /// present program as missing.
+    fn resolve_program(&self) -> Result<PathBuf> {
+        let program = PathBuf::from(&self.program);
+
+        if program.is_absolute() {
+            return program
+                .is_file()
+                .then_some(program)
+                .ok_or_else(|| ExecError::NotFound(self.program.clone()));
+        }
+
+        if self.program.contains('/') || self.program.contains(std::path::MAIN_SEPARATOR) {
+            let base = self.cwd.clone().unwrap_or_else(|| PathBuf::from("."));
+            let candidate = base.join(&program);
+            return candidate
+                .is_file()
+                .then_some(candidate)
+                .ok_or_else(|| ExecError::NotFound(self.program.clone()));
+        }
+
+        // A bare name is looked up on PATH, as a shell would.
+        which::which(&self.program).map_err(|_| ExecError::NotFound(self.program.clone()))
+    }
+
     /// Run to completion.
     pub async fn run(self) -> Result<Output> {
         let started = Instant::now();
-
-        // Resolve the program up front so a typo produces a clear error rather
-        // than an opaque ENOENT from the spawn.
-        let resolved = which::which(&self.program)
-            .map_err(|_| ExecError::NotFound(self.program.clone()))?;
 
         if let Some(cwd) = &self.cwd
             && !cwd.is_dir()
         {
             return Err(ExecError::BadWorkingDirectory(cwd.clone()));
         }
+
+        // Resolve the program up front so a typo produces a clear error rather
+        // than an opaque ENOENT from the spawn.
+        let resolved = self.resolve_program()?;
 
         // Decide about confinement before spawning anything.
         let enforcement_note = match &self.policy {
@@ -499,6 +528,48 @@ pub fn probe_enforcement(policy: &Policy) -> Result<Enforcement> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_relative_program_resolves_against_the_working_directory() {
+        // The regression this guards: `./thing` used to be looked up relative
+        // to wherever the editor was started, so a build tool that produced a
+        // binary and then ran it reported its own output as missing.
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("hello.sh");
+        std::fs::write(&script, "#!/bin/sh\necho from the working directory\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let output = Command::new("./hello.sh")
+            .current_dir(dir.path())
+            .run()
+            .await
+            .unwrap();
+
+        assert!(output.is_success(), "{}", output.stderr);
+        assert!(output.stdout.contains("from the working directory"), "{}", output.stdout);
+    }
+
+    #[tokio::test]
+    async fn a_relative_program_that_is_not_there_is_still_reported_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let error = Command::new("./nothing-here.sh")
+            .current_dir(dir.path())
+            .run()
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ExecError::NotFound(_)), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn an_absolute_program_still_runs() {
+        let output = Command::new("/bin/sh").args(["-c", "echo absolute"]).run().await.unwrap();
+        assert!(output.stdout.contains("absolute"));
+    }
     use std::fs;
     use tempfile::TempDir;
 
@@ -716,7 +787,7 @@ mod tests {
 
     /// A policy allowing the system directories a process needs to start, plus
     /// `allowed`, but deliberately not `forbidden`.
-    fn confining_policy(allowed: &Path) -> Policy {
+    fn confining_policy(allowed: &std::path::Path) -> Policy {
         Policy::builder()
             .label("test-confinement")
             .read("/usr")

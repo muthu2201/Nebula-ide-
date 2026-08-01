@@ -3282,6 +3282,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "nebula-stress"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "console",
+ "nebula-core",
+ "nebula-exec",
+ "nebula-ide",
+ "nebula-index",
+ "nebula-render",
+ "nebula-sandbox",
+ "nebula-search",
+ "nebula-syntax",
+ "nebula-ui",
+ "nebula-vector",
+ "nebula-vfs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "nebula-syntax"
 version = "0.1.0"
 dependencies = [

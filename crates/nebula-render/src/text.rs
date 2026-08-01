@@ -24,10 +24,10 @@ use cosmic_text::{
     Attrs, Buffer, Family, FontSystem as CosmicFontSystem, Metrics, Shaping, SwashCache, Weight,
 };
 use parking_lot::Mutex;
-use tiny_skia::{Paint, Pixmap, Rect as SkRect, Transform};
+use tiny_skia::Pixmap;
 
 use crate::scene::{Rect, TextRun};
-use crate::{RenderError, Result};
+use crate::Result;
 
 /// The bundled regular face.
 pub const BUNDLED_REGULAR: &[u8] = include_bytes!("../assets/fonts/DejaVuSansMono.ttf");
@@ -201,48 +201,81 @@ impl FontSystem {
 
         let color = cosmic_text::Color::rgba(run.color.r, run.color.g, run.color.b, run.color.a);
 
-        let mut failed: Option<String> = None;
+        // Blend coverage straight into the pixel buffer.
+        //
+        // cosmic-text hands back one box per covered pixel, so the obvious
+        // implementation — build a `Paint` and call `fill_rect` for each — runs
+        // the whole rasteriser pipeline a quarter of a million times per frame
+        // on a full screen of text. Compositing by hand is a few lines of
+        // integer arithmetic and is what makes the software path usable at all.
+        let pixmap_width = pixmap.width() as i32;
+        let pixmap_height = pixmap.height() as i32;
+        let pixels = pixmap.pixels_mut();
+
         buffer.draw(fonts, cache, color, |x, y, w, h, pixel| {
-            if failed.is_some() || pixel.a() == 0 {
+            let alpha = pixel.a() as u32;
+            if alpha == 0 {
                 return;
             }
-            let px = origin_x + x as f32;
-            let py = origin_y + y as f32;
 
-            if let Some(clip) = device_clip {
-                // Reject any coverage box that falls outside the clip. Whole
-                // boxes rather than partial ones: cosmic-text emits per-pixel
-                // boxes, so this is exact.
-                if px + w as f32 <= clip.x
-                    || px >= clip.x + clip.width
-                    || py + h as f32 <= clip.y
-                    || py >= clip.y + clip.height
-                {
-                    return;
+            let left = (origin_x + x as f32).floor() as i32;
+            let top = (origin_y + y as f32).floor() as i32;
+
+            for row in 0..h as i32 {
+                let py = top + row;
+                if py < 0 || py >= pixmap_height {
+                    continue;
                 }
-            }
 
-            let mut paint = Paint::default();
-            paint.set_color(tiny_skia::Color::from_rgba8(
-                pixel.r(),
-                pixel.g(),
-                pixel.b(),
-                pixel.a(),
-            ));
-            paint.anti_alias = false;
+                for column in 0..w as i32 {
+                    let px = left + column;
+                    if px < 0 || px >= pixmap_width {
+                        continue;
+                    }
 
-            match SkRect::from_xywh(px, py, w as f32, h as f32) {
-                Some(rect) => {
-                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                    if let Some(clip) = device_clip
+                        && ((px as f32) < clip.x
+                            || px as f32 >= clip.x + clip.width
+                            || (py as f32) < clip.y
+                            || py as f32 >= clip.y + clip.height)
+                    {
+                        continue;
+                    }
+
+                    let index = (py * pixmap_width + px) as usize;
+                    let destination = pixels[index];
+
+                    // Source-over, with both sides premultiplied. `+ 127` makes
+                    // the integer division round rather than truncate, which
+                    // otherwise darkens antialiased edges by up to a level.
+                    let premultiply = |channel: u8| (channel as u32 * alpha + 127) / 255;
+                    let inverse = 255 - alpha;
+                    let over = |source: u32, dest: u8| -> u8 {
+                        (source + (dest as u32 * inverse + 127) / 255).min(255) as u8
+                    };
+
+                    let red = over(premultiply(pixel.r()), destination.red());
+                    let green = over(premultiply(pixel.g()), destination.green());
+                    let blue = over(premultiply(pixel.b()), destination.blue());
+                    let out_alpha =
+                        (alpha + (destination.alpha() as u32 * inverse + 127) / 255).min(255) as u8;
+
+                    // The constructor rejects colours whose channels exceed
+                    // their alpha. Rounding can produce that by a single level,
+                    // so the components are clamped rather than the pixel
+                    // dropped.
+                    pixels[index] = tiny_skia::PremultipliedColorU8::from_rgba(
+                        red.min(out_alpha),
+                        green.min(out_alpha),
+                        blue.min(out_alpha),
+                        out_alpha,
+                    )
+                    .unwrap_or(destination);
                 }
-                None => failed = Some(format!("invalid glyph box at ({px}, {py})")),
             }
         });
 
-        match failed {
-            Some(detail) => Err(RenderError::Text(detail)),
-            None => Ok(()),
-        }
+        Ok(())
     }
 }
 

@@ -214,16 +214,31 @@ impl Highlighter {
         let provider = text_provider(buffer);
         let mut spans: Vec<HighlightSpan> = Vec::new();
 
+        // The tree may have been edited without being re-parsed — that is how
+        // the editor keeps a 150 ms re-parse off the keystroke path. In that
+        // state tree-sitter has shifted node offsets by the edit's delta
+        // without revisiting the nodes themselves, so a node can name a byte
+        // past the end of the current text. Clamping keeps highlighting usable
+        // against a stale tree instead of failing the frame; the offsets become
+        // exact again at the next re-parse.
+        let limit = buffer.len_bytes();
         let mut matches = self.cursor.matches(query, tree.root(), provider);
         while let Some(m) = matches.next() {
             for capture in m.captures {
                 let capture_name = &query.capture_names()[capture.index as usize];
                 let kind = HighlightKind::from_capture(capture_name);
                 let node = capture.node;
+
+                let start_byte = node.start_byte().min(limit);
+                let end_byte = node.end_byte().min(limit);
+                if start_byte >= end_byte {
+                    continue;
+                }
+
                 spans.push(HighlightSpan {
                     range: Range {
-                        start: buffer.byte_to_char(node.start_byte())?,
-                        end: buffer.byte_to_char(node.end_byte())?,
+                        start: buffer.byte_to_char(start_byte)?,
+                        end: buffer.byte_to_char(end_byte)?,
                     },
                     kind,
                 });
@@ -354,6 +369,63 @@ impl<'a> Iterator for RopeChunks<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlighting_survives_a_tree_edited_but_not_re_parsed() {
+        // The editor paints from an edited-but-stale tree so that a re-parse
+        // never sits between a keystroke and a frame. In that state tree-sitter
+        // shifts node offsets without revisiting the nodes, so a node can name
+        // a byte past the end of the text. Failing the frame over that would
+        // make the whole deferred-parse design unusable.
+        use nebula_core::{Document, Transaction};
+
+        let grammar = crate::GrammarRegistry::new().get("rust").unwrap();
+        let mut document = Document::from_str("fn main() { let value = 1; }\n");
+        let mut tree = crate::SyntaxTree::parse(grammar, document.buffer(), 0).unwrap();
+
+        // Delete most of the text and tell the tree about it, without parsing.
+        let before = document.buffer().clone();
+        document.set_selections(nebula_core::SelectionSet::single(
+            nebula_core::Selection::new(4, 28),
+        ));
+        document.delete_backward().unwrap();
+
+        let change: Vec<Transaction> = document.last_change().to_vec();
+        tree.edit(&before, document.buffer(), &change[0]).unwrap();
+
+        let spans = Highlighter::new().highlight(&tree, document.buffer()).unwrap();
+
+        let length = document.buffer().len_chars();
+        for span in &spans {
+            assert!(span.range.end <= length, "{span:?} runs past a {length}-character buffer");
+            assert!(span.range.start < span.range.end, "{span:?} is empty or inverted");
+        }
+    }
+
+    #[test]
+    fn highlighting_is_exact_again_after_the_deferred_re_parse() {
+        use nebula_core::{Document, Transaction};
+
+        let grammar = crate::GrammarRegistry::new().get("rust").unwrap();
+        let mut document = Document::from_str("fn main() {}");
+        let mut tree = crate::SyntaxTree::parse(grammar.clone(), document.buffer(), 0).unwrap();
+
+        let before = document.buffer().clone();
+        document.set_caret(12);
+        document.insert_at_cursors("\nfn other() {}", false).unwrap();
+
+        let change: Vec<Transaction> = document.last_change().to_vec();
+        tree.edit(&before, document.buffer(), &change[0]).unwrap();
+        tree.reparse_incremental(document.buffer(), document.version()).unwrap();
+
+        let incremental = Highlighter::new().highlight(&tree, document.buffer()).unwrap();
+
+        let fresh_tree =
+            crate::SyntaxTree::parse(grammar, document.buffer(), document.version()).unwrap();
+        let fresh = Highlighter::new().highlight(&fresh_tree, document.buffer()).unwrap();
+
+        assert_eq!(incremental, fresh);
+    }
     use crate::grammar::GrammarRegistry;
     use crate::tree::SyntaxTree;
 

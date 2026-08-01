@@ -28,6 +28,9 @@ pub struct OpenFile {
     pub tree: Option<SyntaxTree>,
     /// The version the tree was parsed at, used to decide whether it is stale.
     tree_version: u64,
+    /// When the document was last edited, for deciding whether typing has
+    /// paused long enough to re-parse.
+    last_edit: Option<std::time::Instant>,
 }
 
 impl OpenFile {
@@ -65,7 +68,7 @@ impl Workspace {
         let id = document.id();
         Self {
             project: None,
-            files: vec![OpenFile { document, tree: None, tree_version: 0 }],
+            files: vec![OpenFile { document, tree: None, tree_version: 0, last_edit: None }],
             by_id: HashMap::from([(id, 0)]),
             active: 0,
             grammars: GrammarRegistry::new(),
@@ -198,13 +201,13 @@ impl Workspace {
             && self.files[0].document.buffer().is_empty()
         {
             self.by_id.remove(&self.files[0].document.id());
-            self.files[0] = OpenFile { document, tree, tree_version };
+            self.files[0] = OpenFile { document, tree, tree_version, last_edit: None };
             self.by_id.insert(id, 0);
             self.active = 0;
             return id;
         }
 
-        self.files.push(OpenFile { document, tree, tree_version });
+        self.files.push(OpenFile { document, tree, tree_version, last_edit: None });
         self.active = self.files.len() - 1;
         self.by_id.insert(id, self.active);
         id
@@ -227,9 +230,8 @@ impl Workspace {
 
     /// Re-parse the focused file if its tree is out of date.
     ///
-    /// Called after edits and before rendering. Re-parsing is incremental where
-    /// the tree survived the edit, so this is cheap on a keystroke and only
-    /// expensive after a whole-file replacement.
+    /// Incremental where [`Workspace::note_edit`] kept the tree in step with the
+    /// text, and a full re-parse otherwise.
     pub fn refresh_syntax(&mut self) -> Result<()> {
         let index = self.active;
         if self.files[index].tree_is_current() {
@@ -238,32 +240,88 @@ impl Workspace {
 
         let version = self.files[index].document.version();
         let file = &mut self.files[index];
-        if let Some(tree) = file.tree.as_mut() {
-            tree.reparse(file.document.buffer(), version)?;
-            file.tree_version = version;
-        }
+        let Some(tree) = file.tree.as_mut() else { return Ok(()) };
+
+        // `tree_version == u64::MAX` is the marker for "the incremental state
+        // was lost", where reusing the old tree would produce a wrong one.
+        let result = if file.tree_version == u64::MAX {
+            tree.reparse(file.document.buffer(), version)
+        } else {
+            tree.reparse_incremental(file.document.buffer(), version)
+        };
+
+        result?;
+        file.tree_version = version;
         Ok(())
+    }
+
+    /// Re-parse the focused file only if typing has paused for `idle`.
+    ///
+    /// Returns whether a re-parse happened.
+    ///
+    /// ## Why the delay exists
+    ///
+    /// Even an incremental re-parse is bounded by how much of the *tree*
+    /// changed, not the text: one character typed into a file with fifty
+    /// thousand top-level items rebuilds the root's child list, which measures
+    /// at around 150 ms on a 300 000-line file. Doing that between the keystroke
+    /// and the frame would blow the entire budget twenty times over.
+    ///
+    /// So the editor paints from the edited-but-stale tree, whose offsets
+    /// [`Workspace::note_edit`] has already shifted, and re-parses in the first
+    /// gap in typing. On a normal file the re-parse is sub-millisecond and the
+    /// delay is invisible; on a huge one it is the difference between an editor
+    /// that responds and one that does not.
+    pub fn refresh_syntax_if_idle(&mut self, idle: std::time::Duration) -> Result<bool> {
+        let file = &self.files[self.active];
+        if file.tree_is_current() {
+            return Ok(false);
+        }
+        if file.last_edit.is_some_and(|at| at.elapsed() < idle) {
+            return Ok(false);
+        }
+
+        self.refresh_syntax()?;
+        Ok(true)
     }
 
     /// Tell the focused file's parse tree about an edit, so the next re-parse
     /// is incremental rather than a full reparse.
-    pub fn note_edit(&mut self, before: &nebula_core::TextBuffer, edit: nebula_core::Edit) {
+    pub fn note_edit(
+        &mut self,
+        before: &nebula_core::TextBuffer,
+        transactions: &[nebula_core::Transaction],
+    ) {
         let index = self.active;
-        let version = self.files[index].document.version();
         let file = &mut self.files[index];
+        file.last_edit = Some(std::time::Instant::now());
 
         let Some(tree) = file.tree.as_mut() else { return };
-        let transaction = nebula_core::Transaction::single(edit);
+        if transactions.is_empty() {
+            return;
+        }
 
-        match tree.apply(before, file.document.buffer(), &transaction, version) {
-            Ok(()) => file.tree_version = version,
-            Err(error) => {
-                // Not fatal: marking the tree stale makes the next
-                // `refresh_syntax` do a full re-parse, which is slower but
-                // always correct.
-                tracing::debug!(%error, "incremental edit rejected; falling back to a full reparse");
-                file.tree_version = u64::MAX;
-            }
+        // A grouped edit is several transactions, each in the coordinates that
+        // were current when it ran. tree-sitter has to be told about the extent
+        // of the whole change, and the outer buffers bracket it: replaying the
+        // sequence against intermediate buffers would mean reconstructing each
+        // one, which is what this avoids.
+        let combined = nebula_core::Transaction::from_edits(
+            transactions.iter().flat_map(|t| t.edits().iter().cloned()),
+        );
+
+        // Only the offset shift, never a re-parse: this runs between the
+        // keystroke and the frame.
+        let applied = match combined {
+            Ok(combined) => tree.edit(before, file.document.buffer(), &combined),
+            Err(error) => Err(nebula_syntax::SyntaxError::from(error)),
+        };
+
+        if let Err(error) = applied {
+            // Not fatal: the marker makes the next refresh do a full re-parse,
+            // which is slower but always correct.
+            tracing::debug!(%error, "incremental edit rejected; falling back to a full reparse");
+            file.tree_version = u64::MAX;
         }
     }
 
@@ -329,7 +387,7 @@ impl Workspace {
             let id = document.id();
             self.by_id.clear();
             self.by_id.insert(id, 0);
-            self.files[0] = OpenFile { document, tree: None, tree_version: 0 };
+            self.files[0] = OpenFile { document, tree: None, tree_version: 0, last_edit: None };
             self.active = 0;
             return Ok(());
         }

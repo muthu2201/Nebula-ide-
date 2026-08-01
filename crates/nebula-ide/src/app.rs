@@ -60,6 +60,12 @@ impl std::fmt::Debug for App {
 /// How long a status message stays up.
 const MESSAGE_TIMEOUT: Duration = Duration::from_secs(4);
 
+/// How long typing has to pause before the editor re-parses.
+///
+/// Short enough that highlighting catches up before the user has read what they
+/// typed, long enough that a burst of typing never waits for a parse.
+pub const PARSE_DELAY: Duration = Duration::from_millis(40);
+
 impl App {
     /// Start an editor with the given settings and surface size.
     pub fn new(config: Config, width: u32, height: u32) -> Result<Self> {
@@ -210,47 +216,21 @@ impl App {
             Ok(applied) if applied.global => Response::Ignored,
             Ok(applied) => {
                 if applied.edited {
-                    // Hand the parser the edit so the next re-parse is
-                    // incremental. `before` is the pre-edit buffer the tree was
-                    // built against.
-                    if let Some(edit) = self.last_edit(&before) {
-                        self.workspace.note_edit(&before, edit);
-                    }
+                    // Hand the parser exactly what was applied, so the next
+                    // re-parse is incremental. `before` is the pre-edit buffer
+                    // the tree was built against.
+                    // Only the cheap half here: the tree's offsets are shifted
+                    // so highlighting stays correct, and the re-parse waits for
+                    // a gap in typing. See `Workspace::refresh_syntax_if_idle`.
+                    let change = self.workspace.document().last_change().to_vec();
+                    self.workspace.note_edit(&before, &change);
                     self.sync_view();
-                    if let Err(error) = self.workspace.refresh_syntax() {
-                        tracing::warn!(%error, "re-parse failed; highlighting may be stale");
-                    }
                 }
 
                 if applied.needs_redraw() { Response::Redraw } else { Response::Ignored }
             }
             Err(error) => Response::Error(error.to_string()),
         }
-    }
-
-    /// Reconstruct the edit that just happened, as a single replacement.
-    ///
-    /// tree-sitter only needs the changed region's extent, so collapsing a
-    /// multi-cursor edit into one span covering all of them is correct — it
-    /// makes the re-parse do slightly more work, never the wrong work.
-    fn last_edit(&self, before: &nebula_core::TextBuffer) -> Option<nebula_core::Edit> {
-        let after = self.workspace.document().buffer();
-        if before.content_hash() == after.content_hash() {
-            return None;
-        }
-
-        let old: Vec<char> = before.rope().chars().collect();
-        let new: Vec<char> = after.rope().chars().collect();
-
-        let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
-        let max_suffix = (old.len() - prefix).min(new.len() - prefix);
-        let suffix = (0..max_suffix)
-            .take_while(|i| old[old.len() - 1 - i] == new[new.len() - 1 - i])
-            .count();
-
-        let range = nebula_core::position::Range::new(prefix, old.len() - suffix);
-        let text: String = new[prefix..new.len() - suffix].iter().collect();
-        Some(nebula_core::Edit::replace(range, text))
     }
 
     /// Save the focused document.
@@ -310,6 +290,12 @@ impl App {
 
     /// Build the frame without drawing it.
     pub fn scene(&mut self, scale_factor: f32) -> Result<Scene> {
+        // The one place a deferred re-parse can happen without delaying a
+        // keystroke: if typing has paused, catch the tree up before painting.
+        if let Err(error) = self.workspace.refresh_syntax_if_idle(PARSE_DELAY) {
+            tracing::warn!(%error, "re-parse failed; highlighting may be stale");
+        }
+
         let mut status = nebula_ui::view::StatusLine::for_document(self.workspace.document());
         if let Some(message) = self.message.as_ref().filter(|(_, at)| at.elapsed() < MESSAGE_TIMEOUT)
         {
@@ -452,7 +438,9 @@ mod tests {
     }
 
     #[test]
-    fn editing_keeps_the_parse_tree_up_to_date() {
+    fn a_burst_of_typing_never_waits_for_a_re_parse() {
+        // The tree is deliberately left stale during typing: catching it up
+        // costs ~150 ms on a large file, which is twenty frame budgets.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("main.rs");
         std::fs::write(&path, "fn main() {}").unwrap();
@@ -462,35 +450,43 @@ mod tests {
         app.act(Action::Move(Motion::DocumentEnd), false);
         typed(&mut app, "\nfn second() {}");
 
-        assert!(app.workspace.active().tree_is_current());
-        let tree = app.workspace.active().tree.as_ref().unwrap();
-        assert!(!tree.has_error(), "the incremental re-parse produced a broken tree");
+        assert!(!app.workspace.active().tree_is_current(), "the parse happened on the keystroke path");
     }
 
     #[test]
-    fn an_incremental_reparse_matches_a_full_one() {
-        // If these ever diverge, highlighting silently drifts from the text.
+    fn the_tree_catches_up_once_typing_pauses() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("main.rs");
-        std::fs::write(&path, "fn main() { let a = 1; }").unwrap();
+        std::fs::write(&path, "fn main() {}").unwrap();
 
         let mut app = app();
         app.open(&path).unwrap();
         app.act(Action::Move(Motion::DocumentEnd), false);
-        typed(&mut app, "\nfn other(x: u32) -> u32 { x + 1 }");
+        typed(&mut app, "\nfn second() {}");
 
-        let incremental = app.workspace.active().tree.as_ref().unwrap().to_sexp();
+        // A zero idle threshold is the same code path the real delay uses, and
+        // avoids a sleep in the test.
+        assert!(app.workspace.refresh_syntax_if_idle(Duration::ZERO).unwrap());
+        assert!(app.workspace.active().tree_is_current());
+        assert!(!app.workspace.active().tree.as_ref().unwrap().has_error());
+    }
 
-        let grammar = nebula_syntax::GrammarRegistry::new().get("rust").unwrap();
-        let full = nebula_syntax::SyntaxTree::parse(
-            grammar,
-            app.workspace.document().buffer(),
-            app.workspace.document().version(),
-        )
-        .unwrap()
-        .to_sexp();
+    #[test]
+    fn a_frame_drawn_after_a_pause_catches_the_tree_up_by_itself() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("main.rs");
+        std::fs::write(&path, "fn main() {}").unwrap();
 
-        assert_eq!(incremental, full);
+        let mut app = app();
+        app.open(&path).unwrap();
+        app.act(Action::Move(Motion::DocumentEnd), false);
+        typed(&mut app, "\nfn second() {}");
+        assert!(!app.workspace.active().tree_is_current());
+
+        std::thread::sleep(PARSE_DELAY + Duration::from_millis(10));
+        app.frame(1.0).unwrap();
+
+        assert!(app.workspace.active().tree_is_current(), "the idle frame did not re-parse");
     }
 
     #[test]
@@ -628,27 +624,34 @@ mod tests {
     }
 
     #[test]
-    fn the_edit_reconstruction_finds_the_changed_span() {
+    fn an_edit_is_handed_to_the_parser_exactly_as_applied() {
+        // The parser must be told what actually happened, not a diff derived
+        // afterwards: deriving one costs a pass over the whole document per
+        // keystroke, which is what made a 200 000-line file unusable.
         let mut app = app();
         typed(&mut app, "hello world");
 
-        let before = app.workspace.document().buffer().clone();
         app.act(Action::Move(Motion::DocumentStart), false);
         app.act(Action::Move(Motion::WordRight), false);
         typed(&mut app, "X");
 
-        let edit = app.last_edit(&before).expect("an edit happened");
-        assert_eq!(edit.text, "X");
-        assert!(edit.range.is_empty(), "an insertion replaces nothing");
+        let change = app.workspace.document().last_change();
+        assert_eq!(change.len(), 1);
+        assert_eq!(change[0].edits().len(), 1);
+        assert_eq!(change[0].edits()[0].text, "X");
+        assert!(change[0].edits()[0].range.is_empty(), "an insertion replaces nothing");
     }
 
     #[test]
-    fn no_change_reconstructs_to_no_edit() {
+    fn undo_reports_the_transactions_it_applied() {
         let mut app = app();
-        typed(&mut app, "stable");
-        let before = app.workspace.document().buffer().clone();
-        app.act(Action::Move(Motion::Left), false);
-        assert!(app.last_edit(&before).is_none());
+        typed(&mut app, "abc");
+
+        app.act(Action::Undo, false);
+        assert!(
+            !app.workspace.document().last_change().is_empty(),
+            "undo changed the buffer but reported nothing to the parser"
+        );
     }
 
     #[test]

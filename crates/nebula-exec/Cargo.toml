@@ -23,5 +23,6 @@ libc.workspace = true
 nix.workspace = true
 
 [dev-dependencies]
+nebula-sandbox.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
