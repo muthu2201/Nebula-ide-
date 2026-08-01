@@ -81,6 +81,19 @@ pub fn build_profile(policy: &Policy) -> Result<String> {
     profile.push_str("(allow mach-lookup)\n");
     profile.push_str("(allow file-read-metadata)\n");
 
+    // Mapping a file's pages as executable is a *separate* Seatbelt operation
+    // from reading it, and dyld does both: it opens the shared cache and the
+    // linked dylibs, then maps them executable before `main` runs. With only
+    // `file-read*` granted the open succeeds, the mapping is refused, and dyld
+    // aborts — every dynamically linked program in the macOS stress run died
+    // on `SIGABRT` having written nothing to either stream. Widening the read
+    // paths did not help and could not have, which is what pointed here.
+    //
+    // Unqualified, and it grants no file access on its own: a mapping still
+    // requires the file to be open, which the read rules above govern. What it
+    // permits is executing pages of a file the policy already allows reading.
+    profile.push_str("(allow file-map-executable)\n");
+
     // See `ALWAYS_ALLOWED_DEVICES`: denying these breaks toolchains without
     // withholding anything worth withholding.
     for device in crate::ALWAYS_ALLOWED_DEVICES {
