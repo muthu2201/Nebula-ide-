@@ -101,7 +101,7 @@ tiny-skia = "0.12"
 raw-window-handle = "0.6"
 bytemuck = { version = "1.24", features = ["derive"] }
 pollster = "0.4"
-etagere = "0.2"
+etagere = "0.3"
 
 # --- net / http ---
 reqwest = { version = "0.13", default-features = false, features = [
