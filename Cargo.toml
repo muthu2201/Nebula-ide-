@@ -124,7 +124,7 @@ http = "1.4"
 ed25519-dalek = { version = "3.0", features = ["rand_core", "pkcs8", "pem"] }
 sha2 = "0.10"
 blake3 = "1.8"
-hmac = "0.12"
+hmac = "0.13"
 rand = "0.9"
 rand_core = "0.9"
 base64 = "0.22"
