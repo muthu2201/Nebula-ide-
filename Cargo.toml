@@ -166,7 +166,7 @@ flate2 = "1.1"
 num_cpus = "1.17"
 
 # --- dev / test ---
-criterion = { version = "0.7", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 proptest = "1.9"
 insta = { version = "1.44", features = ["json"] }
 pretty_assertions = "1.4"
