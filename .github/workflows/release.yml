@@ -275,7 +275,7 @@ jobs:
           echo "The manifest signing key is present; the release manifest will be signed."
 
       - name: Publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artefacts/*.tar.gz
